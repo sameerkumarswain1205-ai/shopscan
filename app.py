@@ -812,21 +812,25 @@ with tab2:
     if not st.session_state.cart:
         st.info("Cart is empty. Scan items from the first tab.")
     else:
-        # -- Cart table (editable) --
-        st.markdown("##### Cart Items")
-        cols = st.columns([3, 2, 2, 2, 1])
-        for col, label in zip(cols, ["Item", "Price", "Qty", "Subtotal", ""]):
-            col.markdown(f"**{label}**")
         for i, item in enumerate(st.session_state.cart):
-            cols = st.columns([3, 2, 2, 2, 1])
-            cols[0].write(item["name"])
-            cols[1].write(f"\u20b9{item['price']:.2f}")
-            new_qty = cols[2].number_input(
-                "", min_value=1, value=item["qty"],
+            st.markdown(f"""
+<div style="background:white; border:1px solid #e8e8e8; border-radius:12px; padding:12px; margin-bottom:8px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-weight:600; font-size:16px;">{item['name']}</span>
+        <span style="color:#e74c3c; font-size:14px;">\u20b9{item['price'] * item['qty']:.2f}</span>
+    </div>
+    <div style="color:#666; font-size:13px; margin-top:4px;">
+        \u20b9{item['price']} \u00d7 {item['qty']} units
+    </div>
+</div>
+""", unsafe_allow_html=True)
+            col1, col2, col3 = st.columns([2, 1, 1])
+            new_qty = col1.number_input(
+                "Qty", min_value=1, value=item["qty"],
                 key=f"qty_{item['id']}", label_visibility="collapsed",
             )
-            cols[3].write(f"\u20b9{item['price'] * new_qty:.2f}")
-            if cols[4].button("\U0001f5d1", key=f"del_{item['id']}"):
+            col2.write("")
+            if col3.button("\U0001f5d1", key=f"del_{item['id']}"):
                 st.session_state.cart.remove(item)
                 st.rerun()
             if new_qty != item["qty"]:
@@ -837,7 +841,7 @@ with tab2:
         # -- Action buttons --
         col_a, col_b = st.columns(2)
         with col_a:
-            if st.button("\u2705 Confirm Purchase & Print Bill", type="primary", width="stretch"):
+            if st.button("\u2705 Confirm Purchase & Print Bill", type="primary", use_container_width=True):
                 # Deduct stock
                 errors = []
                 for item in st.session_state.cart:
@@ -887,7 +891,7 @@ with tab2:
                     st.rerun()
 
         with col_b:
-            if st.button("\U0001f5d1 Clear Cart", width="stretch"):
+            if st.button("\U0001f5d1 Clear Cart", use_container_width=True):
                 cart_clear()
                 st.rerun()
 
