@@ -485,8 +485,6 @@ def find_best_match(uploaded_bytes, scales=(0.55, 0.75, 1.0)):
 def init_cart():
     if "cart" not in st.session_state:
         st.session_state.cart = []  # list of {id, name, price, qty}
-    if "matched_product" not in st.session_state:
-        st.session_state.matched_product = None
     if "current_scan" not in st.session_state:
         st.session_state.current_scan = None  # matched product row (sqlite3.Row)
     if "scan_key" not in st.session_state:
@@ -626,39 +624,6 @@ tab1, tab2, tab3 = st.tabs(["\U0001f4f7 Scan & Sell", "\U0001f4b0 Current Bill",
 # TAB 1 : SCAN & SELL
 # ======================================================================
 with tab1:
-    # -- Show matched product at TOP if exists --
-    if st.session_state.get("matched_product"):
-        p = st.session_state["matched_product"]
-        with st.container(border=True):
-            st.success(f"\u2705 Matched: **{p['item_name']}**")
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                try:
-                    if p.get("image_data"):
-                        img = Image.open(io.BytesIO(base64.b64decode(p["image_data"])))
-                        st.image(img, width=100)
-                except:
-                    pass
-            with col2:
-                st.markdown(f"**{p['item_name']}**")
-                st.write(f"\u20b9{p['price']} | Stock: {p['stock_quantity']}")
-            qty = st.number_input("Qty", min_value=1, value=1, key="top_qty")
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("\U0001f6d2 Add to Bill", use_container_width=True, key="top_add"):
-                    st.session_state["cart"].append({
-                        "id": p["id"],
-                        "name": p["item_name"],
-                        "price": p["price"],
-                        "qty": qty,
-                    })
-                    st.session_state["matched_product"] = None
-                    st.rerun()
-            with c2:
-                if st.button("\U0001f504 Reset", use_container_width=True, key="top_reset"):
-                    st.session_state["matched_product"] = None
-                    st.rerun()
-
     # ── Visual framing overlay for the camera viewfinder ──────────────
     st.markdown(
         """
@@ -724,7 +689,7 @@ with tab1:
             row, match_count = find_best_match(source_bytes)
 
         if row is not None:
-            st.session_state["matched_product"] = dict(row)
+            st.session_state.current_scan = dict(row)
             st.session_state.manual_select = row["item_name"]
             st.success(f"\u2705 Matched: **{row['item_name']}**  (score={match_count})")
         else:
@@ -761,11 +726,45 @@ with tab1:
                     f"{match_dict['item_name']} \u2014 \u20b9{match_dict['price']:.2f}",
                     key=f"search_match_{match_dict['id']}",
                 ):
-                    st.session_state["matched_product"] = match_dict
+                    st.session_state.current_scan = match_dict
                     st.session_state["search_key_counter"] += 1
                     st.rerun()
             if not matches:
                 st.caption("No items found")
+
+    # -- Show selected product details below --
+    scan = st.session_state.current_scan
+    if scan is not None:
+        st.markdown("---")
+        try:
+            if scan.get("image_data"):
+                img = Image.open(io.BytesIO(base64.b64decode(scan["image_data"])))
+                st.image(img, width=140)
+        except:
+            pass
+        st.subheader(scan["item_name"])
+        st.write(f"Category: {scan['category']} | \u20b9{scan['price']} | Stock: {scan['stock_quantity']} units")
+        if scan["stock_quantity"] > 0:
+            qty = st.number_input("Qty", min_value=1, value=1, key="scan_qty")
+            if st.button("\U0001f6d2 Add to Bill", use_container_width=True):
+                st.session_state.cart.append({
+                    "id": scan["id"],
+                    "name": scan["item_name"],
+                    "price": scan["price"],
+                    "qty": qty,
+                })
+                st.success(f"Added {qty} x {scan['item_name']} to cart")
+                st.session_state.current_scan = None
+                st.session_state.scan_key += 1
+                st.session_state.search_key_counter += 1
+                st.rerun()
+        else:
+            st.error("OUT OF STOCK")
+        if st.button("\U0001f504 Reset Scanner", use_container_width=True):
+            st.session_state.current_scan = None
+            st.session_state.scan_key += 1
+            st.session_state.search_key_counter += 1
+            st.rerun()
 
 # ======================================================================
 # TAB 2 : CURRENT BILL & CHECKOUT
