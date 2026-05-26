@@ -633,9 +633,12 @@ with tab1:
             st.success(f"\u2705 Matched: **{p['item_name']}**")
             col1, col2 = st.columns([1, 2])
             with col1:
-                if p.get("image_data"):
-                    img = Image.open(io.BytesIO(base64.b64decode(p["image_data"])))
-                    st.image(img, width=100)
+                try:
+                    if p.get("image_data"):
+                        img = Image.open(io.BytesIO(base64.b64decode(p["image_data"])))
+                        st.image(img, width=100)
+                except:
+                    pass
             with col2:
                 st.markdown(f"**{p['item_name']}**")
                 st.write(f"\u20b9{p['price']} | Stock: {p['stock_quantity']}")
@@ -755,7 +758,7 @@ with tab1:
                     f"{match['item_name']} \u2014 \u20b9{match['price']:.2f}",
                     key=f"match_{match['id']}",
                 ):
-                    st.session_state["matched_product"] = match
+                    st.session_state["matched_product"] = dict(match)
                     st.rerun()
             if not matches:
                 st.caption("No items found")
