@@ -467,6 +467,7 @@ with tab1:
         st.session_state.pending_image = source_bytes
 
     if st.session_state.get("pending_image"):
+        st.caption("\U0001f9e0 Running AI Locally \u2014 No Internet Required")
         if st.button("\U0001f680 Analyze Product", key="analyze_btn", use_container_width=True, type="primary"):
             with st.spinner("Identifying item..."):
                 row, status_msg = yolo_match_image(st.session_state.pending_image)
@@ -474,7 +475,7 @@ with tab1:
             if row is not None:
                 st.session_state.current_scan = row
                 st.session_state.manual_select = row["item_name"]
-                st.success(f"\u2705 Matched: **{row['item_name']}**")
+                st.success(f"\U0001f4e6 Product Detected: **{row['item_name']}**")
                 st.session_state.scroll_to_result = True
             else:
                 st.warning(f"\u26a0\ufe0f {status_msg}")
