@@ -30,7 +30,6 @@ from datetime import datetime
 
 import pandas as pd
 from PIL import Image, ImageFilter
-from streamlit_webrtc import webrtc_streamer
 
 st.markdown("""
 <style>
@@ -651,24 +650,9 @@ with tab1:
         "\U0001f4a1 Tip: Center the item inside the dashed box for the best matching score."
     )
 
-    # -- Live camera (forces back camera on mobile) --
+    # -- Camera input (dynamic key lets us force-reset the widget) --
     camera_key = f"cam_{st.session_state.scan_key}"
-    ctx = webrtc_streamer(
-        key=camera_key,
-        media_stream_constraints={
-            "video": {"facingMode": {"ideal": "environment"}},
-            "audio": False,
-        },
-        async_processing=True,
-    )
-    cam_img = None
-    if ctx.video_receiver:
-        frame = ctx.video_receiver.get_frame(timeout=1)
-        if frame is not None:
-            pil = frame.to_image()
-            buf = io.BytesIO()
-            pil.save(buf, format="JPEG")
-            cam_img = buf
+    cam_img = st.camera_input("Take a photo of the item", key=camera_key)
 
     # -- File uploader fallback (also uses dynamic key so reset clears it) --
     upload_key = f"upload_{st.session_state.scan_key}"
@@ -967,26 +951,14 @@ with tab3:
     if camera_on:
         step = st.session_state.capture_step
         st.write(f"**Photos taken: {step} / 4**")
-        ctx = webrtc_streamer(
-            key=f"cap_cam_{step}",
-            media_stream_constraints={
-                "video": {"facingMode": {"ideal": "environment"}},
-                "audio": False,
-            },
-            async_processing=True,
-        )
-        if ctx.video_receiver:
-            frame = ctx.video_receiver.get_frame(timeout=1)
-            if frame is not None:
-                if len(st.session_state.captured_images) < 4:
-                    pil = frame.to_image()
-                    buf = io.BytesIO()
-                    pil.save(buf, format="JPEG")
-                    st.session_state.captured_images.append(buf)
-                    st.session_state.capture_step = len(st.session_state.captured_images)
-                    if len(st.session_state.captured_images) >= 4:
-                        st.session_state.camera_active = False
-                st.rerun()
+        img = st.camera_input(" ", key=f"cap_cam_{step}", label_visibility="collapsed")
+        if img:
+            if len(st.session_state.captured_images) < 4:
+                st.session_state.captured_images.append(img)
+                st.session_state.capture_step = len(st.session_state.captured_images)
+                if len(st.session_state.captured_images) >= 4:
+                    st.session_state.camera_active = False
+            st.rerun()
         if st.button("Skip", use_container_width=True):
             st.session_state.camera_active = False
             st.session_state.capture_step = 0
