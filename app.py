@@ -812,89 +812,84 @@ with tab2:
     if not st.session_state.cart:
         st.info("Cart is empty. Scan items from the first tab.")
     else:
-        for i, item in enumerate(st.session_state["cart"]):
-            with st.container(border=True):
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.markdown(f"**{item['name']}**")
-                with col2:
-                    st.markdown(f"<div style='text-align:right; color:#e74c3c; font-weight:700;'>\u20b9{item['price'] * item['qty']:.2f}</div>", unsafe_allow_html=True)
-                col3, col4 = st.columns([3, 1])
-                with col3:
-                    new_qty = st.number_input(
-                        f"\u20b9{item['price']:.2f} \u00d7 units",
-                        min_value=1, value=item["qty"],
-                        key=f"qty_{i}",
-                    )
-                with col4:
-                    st.write("")
-                    if st.button("\U0001f5d1\ufe0f", key=f"del_{i}"):
-                        st.session_state["cart"].pop(i)
-                        st.rerun()
-                if new_qty != item["qty"]:
-                    st.session_state["cart"][i]["qty"] = new_qty
-                    st.rerun()
-        total = cart_total()
-        st.markdown(f"""
-<div style="background:#f8f9fa; border-radius:12px; padding:16px; margin:16px 0; display:flex; justify-content:space-between; align-items:center;">
-    <span style="font-size:18px; font-weight:600;">Total</span>
-    <span style="font-size:22px; font-weight:700; color:#e74c3c;">\u20b9{total:.2f}</span>
-</div>
-""", unsafe_allow_html=True)
+        # -- Cart table (editable) --
+        st.markdown("##### Cart Items")
+        cols = st.columns([3, 2, 2, 2, 1])
+        for col, label in zip(cols, ["Item", "Price", "Qty", "Subtotal", ""]):
+            col.markdown(f"**{label}**")
+        for i, item in enumerate(st.session_state.cart):
+            cols = st.columns([3, 2, 2, 2, 1])
+            cols[0].write(item["name"])
+            cols[1].write(f"\u20b9{item['price']:.2f}")
+            new_qty = cols[2].number_input(
+                "", min_value=1, value=item["qty"],
+                key=f"qty_{item['id']}", label_visibility="collapsed",
+            )
+            cols[3].write(f"\u20b9{item['price'] * new_qty:.2f}")
+            if cols[4].button("\U0001f5d1", key=f"del_{item['id']}"):
+                st.session_state.cart.remove(item)
+                st.rerun()
+            if new_qty != item["qty"]:
+                item["qty"] = new_qty
+                st.rerun()
+        st.markdown(f"### Total: \u20b9{cart_total():.2f}")
 
         # -- Action buttons --
-        if st.button("\u2705 Confirm Purchase & Print Bill", type="primary", use_container_width=True):
-            # Deduct stock
-            errors = []
-            for item in st.session_state.cart:
-                prod = get_product_by_id(item["id"])
-                if prod and prod["stock_quantity"] >= item["qty"]:
-                    update_stock(item["id"], item["qty"])
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("\u2705 Confirm Purchase & Print Bill", type="primary", width="stretch"):
+                # Deduct stock
+                errors = []
+                for item in st.session_state.cart:
+                    prod = get_product_by_id(item["id"])
+                    if prod and prod["stock_quantity"] >= item["qty"]:
+                        update_stock(item["id"], item["qty"])
+                    else:
+                        errors.append(f"{item['name']} (only {prod['stock_quantity']} in stock)" if prod else f"{item['name']} not found")
+
+                if errors:
+                    st.error("Could not fulfil:\n" + "\n".join(errors))
                 else:
-                    errors.append(f"{item['name']} (only {prod['stock_quantity']} in stock)" if prod else f"{item['name']} not found")
+                    # Build itemised list string
+                    item_parts = [f"{i['name']} x{i['qty']}" for i in st.session_state.cart]
+                    items_str = ", ".join(item_parts)
+                    grand_total = cart_total()
 
-            if errors:
-                st.error("Could not fulfil:\n" + "\n".join(errors))
-            else:
-                # Build itemised list string
-                item_parts = [f"{i['name']} x{i['qty']}" for i in st.session_state.cart]
-                items_str = ", ".join(item_parts)
-                grand_total = cart_total()
+                    # Save to history
+                    save_transaction(items_str, grand_total)
 
-                # Save to history
-                save_transaction(items_str, grand_total)
-
-                # Digital receipt
-                now = datetime.now().strftime("%d-%b-%Y %I:%M %p")
-                st.markdown("---")
-                st.markdown(
-                    f"""
-                    <div style="border:2px dashed #4CAF50; padding:1rem; border-radius:8px; background:#f9fff9;">
-                    <h3 style="text-align:center;">\U0001f4b3 ShopScan Receipt</h3>
-                    <p style="text-align:center; font-size:0.9rem;">{now}</p>
-                    <hr>
-                    <table style="width:100%; font-size:1rem;">
-                    <tr><th>Item</th><th>Qty</th><th style="text-align:right;">Amount</th></tr>
-                    """
-                    + "".join(
-                        f"<tr><td>{i['name']}</td><td>{i['qty']}</td><td style='text-align:right;'>\u20b9{i['price']*i['qty']:.2f}</td></tr>"
-                        for i in st.session_state.cart
+                    # Digital receipt
+                    now = datetime.now().strftime("%d-%b-%Y %I:%M %p")
+                    st.markdown("---")
+                    st.markdown(
+                        f"""
+                        <div style="border:2px dashed #4CAF50; padding:1rem; border-radius:8px; background:#f9fff9;">
+                        <h3 style="text-align:center;">\U0001f4b3 ShopScan Receipt</h3>
+                        <p style="text-align:center; font-size:0.9rem;">{now}</p>
+                        <hr>
+                        <table style="width:100%; font-size:1rem;">
+                        <tr><th>Item</th><th>Qty</th><th style="text-align:right;">Amount</th></tr>
+                        """
+                        + "".join(
+                            f"<tr><td>{i['name']}</td><td>{i['qty']}</td><td style='text-align:right;'>\u20b9{i['price']*i['qty']:.2f}</td></tr>"
+                            for i in st.session_state.cart
+                        )
+                        + f"""
+                        </table>
+                        <hr>
+                        <h4 style="text-align:right;">Total: \u20b9{grand_total:.2f}</h4>
+                        <p style="text-align:center; font-size:0.8rem; color:gray;">Thank you for your purchase!</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
                     )
-                    + f"""
-                    </table>
-                    <hr>
-                    <h4 style="text-align:right;">Total: \u20b9{grand_total:.2f}</h4>
-                    <p style="text-align:center; font-size:0.8rem; color:gray;">Thank you for your purchase!</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                    cart_clear()
+                    st.rerun()
+
+        with col_b:
+            if st.button("\U0001f5d1 Clear Cart", width="stretch"):
                 cart_clear()
                 st.rerun()
-
-        if st.button("\U0001f5d1 Clear Cart", use_container_width=True):
-            cart_clear()
-            st.rerun()
 
     # ── Sales & Bill History ────────────────────────────────────────────
     st.markdown("---")
