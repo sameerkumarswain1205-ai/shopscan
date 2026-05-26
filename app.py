@@ -24,6 +24,7 @@ st.markdown(
 
 import os
 import io
+import base64
 import sqlite3
 import tempfile
 from datetime import datetime
@@ -75,6 +76,10 @@ def init_db():
         )
         """
     )
+    try:
+        conn.execute("ALTER TABLE inventory ADD COLUMN image_data TEXT")
+    except:
+        pass
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS history (
@@ -100,12 +105,12 @@ def update_product_price_stock(pid, price, stock):
     conn.close()
 
 
-def add_product(name, category, price, stock, image_path):
+def add_product(name, category, price, stock, image_path, image_data=None):
     try:
         conn = get_connection()
         conn.execute(
-            "INSERT INTO inventory (item_name, category, price, stock_quantity, image_path) VALUES (?, ?, ?, ?, ?)",
-            (name, category, price, stock, image_path),
+            "INSERT INTO inventory (item_name, category, price, stock_quantity, image_path, image_data) VALUES (?, ?, ?, ?, ?, ?)",
+            (name, category, price, stock, image_path, image_data),
         )
         conn.commit()
         conn.close()
@@ -652,6 +657,15 @@ with tab1:
 
     # -- Camera input (dynamic key lets us force-reset the widget) --
     camera_key = f"cam_{st.session_state.scan_key}"
+    st.markdown("""
+<style>
+.mobile-camera-hint { display: none; }
+@media (max-width: 768px) { .mobile-camera-hint { display: block; } }
+</style>
+<div class="mobile-camera-hint" style="padding:0.5rem;border-radius:8px;background:#e6f7ff;border:1px solid #91d5ff;font-size:14px;margin-bottom:8px;">
+📱 On mobile: tap the 🔄 flip icon in the camera to switch to back camera
+</div>
+""", unsafe_allow_html=True)
     cam_img = st.camera_input("Take a photo of the item", key=camera_key)
 
     # -- File uploader fallback (also uses dynamic key so reset clears it) --
@@ -722,9 +736,15 @@ with tab1:
     if scanned_product is not None:
         col1, col2 = st.columns([1, 2])
         with col1:
-            img_path = scanned_product["image_path"]
-            if img_path and os.path.isfile(img_path):
-                st.image(img_path, width=140)
+            if scanned_product["image_data"]:
+                img_bytes = base64.b64decode(scanned_product["image_data"])
+                st.image(Image.open(io.BytesIO(img_bytes)), width=140)
+            else:
+                img_path = scanned_product["image_path"]
+                if img_path:
+                    image_paths = img_path.split("|")
+                    if image_paths and os.path.exists(image_paths[0]):
+                        st.image(image_paths[0], width=140)
         with col2:
             st.markdown(
                 f"**{scanned_product['item_name']}**  \n"
@@ -1108,9 +1128,18 @@ with tab3:
                 # Build pipe-delimited path string for the DB
                 img_path_str = "|".join(final_paths) if final_paths else None
 
+                # Convert first image to base64 for mobile display
+                img_data_b64 = None
+                if final_paths:
+                    try:
+                        with open(final_paths[0], "rb") as f:
+                            img_data_b64 = base64.b64encode(f.read()).decode("utf-8")
+                    except:
+                        pass
+
                 ok, err = add_product(
                     new_name.strip(), new_category.strip(),
-                    price_val, stock_val, img_path_str,
+                    price_val, stock_val, img_path_str, img_data_b64,
                 )
                 if ok:
                     st.session_state.captured_images = []
@@ -1183,7 +1212,7 @@ with tab3:
                     "Category": r[2],
                     "Price": r[3],
                     "Stock": r[4],
-                    "Image": r[5] if r[5] else "",
+                    "Image": f"data:image/jpeg;base64,{r[6]}" if r[6] else "",
                     "Delete?": False,
                 }
                 for r in all_rows
