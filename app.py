@@ -778,9 +778,7 @@ setTimeout(() => document.getElementById('result')?.scrollIntoView({behavior: 's
                 if item["id"] == scanned_product["id"]
             )
 
-            if scanned_product["stock_quantity"] <= 0:
-                st.warning("Cannot add to bill. No more units left in stock!")
-            elif cart_qty >= scanned_product["stock_quantity"]:
+            if cart_qty >= scanned_product["stock_quantity"]:
                 st.warning(
                     f"Only {scanned_product['stock_quantity']} units available!"
                 )
