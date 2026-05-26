@@ -773,43 +773,35 @@ setTimeout(() => document.getElementById('result')?.scrollIntoView({behavior: 's
         if scanned_product["stock_quantity"] <= 0:
             st.error("OUT OF STOCK")
         else:
-            # Fresh stock read from DB (guard against stale session data)
-            fresh_prod = get_product_by_id(scanned_product["id"])
-            db_stock = fresh_prod["stock_quantity"] if fresh_prod else 0
-
-            # How many of this item already sit in the cart?
-            already_in_cart = sum(
+            cart_qty = sum(
                 item["qty"] for item in st.session_state.cart
                 if item["id"] == scanned_product["id"]
             )
-            remaining_stock = db_stock - already_in_cart
 
-            if remaining_stock <= 0:
+            if scanned_product["stock_quantity"] <= 0:
                 st.warning("Cannot add to bill. No more units left in stock!")
+            elif cart_qty >= scanned_product["stock_quantity"]:
+                st.warning(
+                    f"Only {scanned_product['stock_quantity']} units available!"
+                )
             else:
+                max_qty = scanned_product["stock_quantity"] - cart_qty
                 col_a, col_b = st.columns([1, 1])
                 with col_a:
                     qty = st.number_input(
-                        "Qty", min_value=1, max_value=remaining_stock, value=1,
+                        "Qty", min_value=1, max_value=max_qty, value=1,
                         key="add_qty"
                     )
                 with col_b:
                     if st.button("\U0001f6d2 Add to Bill", key="add_bill_scan", use_container_width=True):
-                        already_in_cart_now = sum(
-                            item["qty"] for item in st.session_state.cart
-                            if item["id"] == scanned_product["id"]
+                        cart_add(scanned_product, qty)
+                        st.success(
+                            f"Added {qty} x {scanned_product['item_name']} to cart"
                         )
-                        if already_in_cart_now + qty > db_stock:
-                            st.error(
-                                f"Cannot add to bill. Only {db_stock - already_in_cart_now} units left in stock!"
-                            )
-                        else:
-                            cart_add(scanned_product, qty)
-                            st.success(f"Added {qty} x {scanned_product['item_name']} to cart")
-                            st.session_state.current_scan = None
-                            st.session_state.scan_key += 1
-                            st.session_state.search_key_counter += 1
-                            st.rerun()
+                        st.session_state.current_scan = None
+                        st.session_state.scan_key += 1
+                        st.session_state.search_key_counter += 1
+                        st.rerun()
 
         # Independent reset button
         if st.button("\U0001f504 Reset Scanner", key="reset_scan", use_container_width=True):
