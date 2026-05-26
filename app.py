@@ -187,70 +187,69 @@ def clear_transaction_history():
 
 
 # ---------------------------------------------------------------------------
-# YOLOv8 LOCAL VISION MATCHING
+# CLIP-BASED LOCAL IMAGE MATCHING
 # ---------------------------------------------------------------------------
 
-import numpy as np
-from ultralytics import YOLO
+import torch
+from transformers import CLIPProcessor, CLIPModel
 
 
 @st.cache_resource
-def load_yolo():
-    return YOLO("yolov8n.pt")
+def load_clip():
+    model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+    processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    return model, processor
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _yolo_predict(image_bytes_tuple):
-    """Run YOLO inference. Returns list of detected COCO class names."""
-    try:
-        model = load_yolo()
-        img = Image.open(io.BytesIO(bytes(image_bytes_tuple)))
-        results = model.predict(source=np.array(img), conf=0.5, verbose=False)
-        detected = []
-        for r in results:
-            for c in r.boxes.cls:
-                name = model.names[int(c)]
-                if name not in detected:
-                    detected.append(name)
-        return detected
-    except Exception as e:
-        return f"__ERROR__:{e}"
+def _image_embedding(_image):
+    """Compute normalized CLIP embedding for a PIL Image."""
+    model, processor = load_clip()
+    inputs = processor(images=_image, return_tensors="pt")
+    with torch.no_grad():
+        emb = model.get_image_features(**inputs)
+    emb = emb / emb.norm(dim=-1, keepdim=True)
+    return emb.cpu().numpy().flatten().tolist()
 
 
-def yolo_match_image(image_bytes):
+def clip_match_image(image_bytes):
     """
-    YOLO local inference. Returns (product_row, status_message).
+    CLIP similarity search against product reference images.
+    Returns (product_row, status_message).
     """
     products = get_all_products()
     if not products:
         return None, "No products in database"
 
-    result = _yolo_predict(bytes(image_bytes))
+    query_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    query_emb = _image_embedding(query_img)
 
-    if isinstance(result, str) and result.startswith("__ERROR__:"):
-        return None, result[len("__ERROR__:"):]
-
-    if not result:
-        return None, "No confident match found. Please search manually or retake photo."
-
-    detected_lower = [d.lower() for d in result]
-
+    best_score = 0.0
     best_product = None
-    best_score = 0
-    for p in products:
-        pname_lower = p["item_name"].lower()
-        pname_words = set(pname_lower.replace("-", " ").replace("_", " ").split())
-        for det in detected_lower:
-            if det in pname_lower:
-                score = len(det) / max(len(pname_lower), 1)
-                if score > best_score:
-                    best_score = score
-                    best_product = p
 
-    if best_product and best_score > 0.25:
+    for p in products:
+        raw = (p.get("image_path") or "").strip()
+        if not raw:
+            continue
+        paths = [x.strip() for x in raw.split("|") if x.strip() and os.path.isfile(x.strip())]
+        if not paths:
+            continue
+
+        ref_img = Image.open(paths[0]).convert("RGB")
+        ref_emb = _image_embedding(ref_img)
+
+        dot = sum(a * b for a, b in zip(query_emb, ref_emb))
+        if dot > best_score:
+            best_score = dot
+            best_product = p
+
+    if best_product and best_score >= 0.8:
         return best_product, None
 
-    return None, f"Detected: {', '.join(result)}. No inventory match found."
+    if best_product:
+        return None, f"Best match: {best_product['item_name']} ({best_score:.2f}). No confident match."
+
+    return None, "No confident match found. Please search manually or retake photo."
 
 
 # ---------------------------------------------------------------------------
@@ -470,7 +469,7 @@ with tab1:
         st.caption("\U0001f9e0 Running AI Locally \u2014 No Internet Required")
         if st.button("\U0001f680 Analyze Product", key="analyze_btn", use_container_width=True, type="primary"):
             with st.spinner("Identifying item..."):
-                row, status_msg = yolo_match_image(st.session_state.pending_image)
+                row, status_msg = clip_match_image(st.session_state.pending_image)
 
             if row is not None:
                 st.session_state.current_scan = row
