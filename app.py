@@ -813,21 +813,22 @@ with tab2:
         st.info("Cart is empty. Scan items from the first tab.")
     else:
         for i, item in enumerate(st.session_state.cart):
+            current_qty = st.session_state.get(f"qty_{item['id']}_{i}", item["qty"])
             st.markdown(f"""
 <div style="background:white; border:1px solid #eee; border-radius:12px; padding:14px 16px; margin-bottom:10px; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
     <div style="display:flex; justify-content:space-between; align-items:center;">
         <span style="font-size:16px; font-weight:600; color:#222;">{item['name']}</span>
-        <span style="font-size:15px; font-weight:700; color:#e74c3c;">\u20b9{item['price'] * item['qty']:.2f}</span>
+        <span style="font-size:15px; font-weight:700; color:#e74c3c;">\u20b9{item['price'] * current_qty:.2f}</span>
     </div>
     <div style="color:#888; font-size:13px; margin-top:4px;">
-        \u20b9{item['price']:.2f} \u00d7 {item['qty']} units
+        \u20b9{item['price']:.2f} \u00d7 {current_qty} units
     </div>
 </div>
 """, unsafe_allow_html=True)
             col1, col2 = st.columns([4, 1])
             with col1:
                 new_qty = st.number_input(
-                    "", min_value=1, value=item["qty"],
+                    "", min_value=1, value=current_qty,
                     key=f"qty_{item['id']}_{i}", label_visibility="collapsed",
                 )
             with col2:
@@ -835,7 +836,7 @@ with tab2:
                     st.session_state["cart"].pop(i)
                     st.rerun()
             if new_qty != item["qty"]:
-                item["qty"] = new_qty
+                st.session_state["cart"][i]["qty"] = new_qty
                 st.rerun()
         total = cart_total()
         st.markdown(f"""
