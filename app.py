@@ -838,18 +838,20 @@ with tab2:
             </div>
         </div>
         """, unsafe_allow_html=True)
-            col1, col2, col3 = st.columns([2, 1, 1])
-            with col1:
-                st.write("Qty")
-            with col2:
+            col_qty, col_del = st.columns([5, 1])
+            with col_qty:
                 new_qty = st.number_input(
-                    "", min_value=1, value=item["qty"],
-                    key=f"bill_qty_{i}", label_visibility="collapsed",
+                    "Qty",
+                    min_value=1,
+                    value=item["qty"],
+                    key=f"bill_qty_{i}",
                 )
-            with col3:
-                if st.button("\U0001f5d1", key=f"bill_del_{i}", use_container_width=True):
+            with col_del:
+                st.markdown("<div style='margin-top:28px;'>", unsafe_allow_html=True)
+                if st.button("\U0001f5d1", key=f"bill_del_{i}"):
                     st.session_state["cart"].pop(i)
                     st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
             if new_qty != item["qty"]:
                 st.session_state["cart"][i]["qty"] = new_qty
                 st.rerun()
