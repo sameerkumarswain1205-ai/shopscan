@@ -536,6 +536,14 @@ st.set_page_config(
     layout="centered",
 )
 
+st.markdown("""
+<style>
+div[data-testid="column"] {
+    padding: 0 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.markdown(
     """
 <script>
@@ -838,17 +846,21 @@ with tab2:
             </div>
         </div>
         """, unsafe_allow_html=True)
-            col_qty, col_del = st.columns([5, 1])
+            st.markdown(f"""
+<div style="display:flex; align-items:center; gap:10px; margin:8px 0;">
+    <span style="font-size:14px; color:#666; min-width:30px;">Qty</span>
+</div>
+""", unsafe_allow_html=True)
+            col_qty, col_del = st.columns([6, 1])
             with col_qty:
                 new_qty = st.number_input(
-                    "Qty",
-                    min_value=1,
+                    "q", min_value=1,
                     value=item["qty"],
                     key=f"bill_qty_{i}",
                     label_visibility="collapsed",
                 )
             with col_del:
-                if st.button("\U0001f5d1", key=f"bill_del_{i}"):
+                if st.button("\U0001f5d1", key=f"bill_del_{i}", help="Remove item"):
                     st.session_state["cart"].pop(i)
                     st.rerun()
             if new_qty != item["qty"]:
