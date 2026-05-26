@@ -390,8 +390,8 @@ def _score_against_ref(q_des_list, q_edge_list, q_hist, ref_bytes):
 
     if des_score >= 30:
         combined = max(combined, 0.80)
-    if hist_score >= 0.75:
-        combined = max(combined, 0.75)
+    if hist_score >= 0.85:
+        combined = max(combined, 0.85)
     if edge_score >= 0.80:
         combined = max(combined, 0.70)
 
@@ -409,7 +409,7 @@ def find_best_match(uploaded_bytes, scales=(0.55, 0.75, 1.0)):
          **list** of reference-image paths (front, back, side, etc.).
       4. For each product, iterate through *all* its images and keep the
          **maximum** score across angles.
-      5. Short-circuit: if any angle scores ≥ 0.75, lock that product
+      5. Short-circuit: if any angle scores ≥ 0.85, lock that product
          immediately and return.
       6. Adaptive dominance thresholding for the final decision.
 
@@ -446,17 +446,17 @@ def find_best_match(uploaded_bytes, scales=(0.55, 0.75, 1.0)):
             if score > best_angle_score:
                 best_angle_score = score
 
-            # ----------  Short-circuit: ≥ 0.75 → instant lock ----------
-            if best_angle_score >= 0.75:
+            # ----------  Short-circuit: ≥ 0.85 → instant lock ----------
+            if best_angle_score >= 0.85:
                 break
 
         scored.append((best_angle_score, entry["row"]))
 
-        if best_angle_score >= 0.75:
+        if best_angle_score >= 0.85:
             # This product is a near-certain match — short-circuit the
             # outer loop and return immediately.
             scored.sort(key=lambda x: x[0], reverse=True)
-            return scored[0][1], 75
+            return scored[0][1], 85
 
     if not scored:
         return None, 0
@@ -699,12 +699,12 @@ with tab1:
         else:
             if match_count > 0:
                 st.warning(
-                    f"\u26a0\ufe0f No clear match found (best score={match_count}). "
-                    "Please try again or select manually."
+                    f"\u26a0\ufe0f No confident match found (best score={match_count}). "
+                    "Please search manually or retake photo."
                 )
             else:
                 st.warning(
-                    "\u26a0\ufe0f No clear match found. Please try again or select manually."
+                    "\u26a0\ufe0f No confident match found. Please search manually or retake photo."
                 )
 
     # -- Manual fallback dropdown (always available) --
