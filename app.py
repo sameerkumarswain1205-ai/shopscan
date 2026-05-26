@@ -503,8 +503,7 @@ def init_cart():
         st.session_state.selected_category = "Electrical"
     if "confirm_delete_all" not in st.session_state:
         st.session_state.confirm_delete_all = False
-    if "inventory_backup" not in st.session_state:
-        st.session_state.inventory_backup = []
+
 
 
 def cart_add(product, qty):
@@ -1274,15 +1273,13 @@ with tab3:
             use_container_width=True,
         )
 
-        col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+        col1, col2, col3 = st.columns([2, 2, 2])
         with col1:
             save_clicked = st.button("\U0001f4be Save All Changes", type="primary", use_container_width=True)
         with col2:
             delete_clicked = st.button("\u274c Delete Selected", use_container_width=True)
         with col3:
             delete_all_clicked = st.button("\U0001f5d1 Delete All", use_container_width=True)
-        with col4:
-            undo_clicked = st.button("\u21a9 Undo", use_container_width=True)
 
         if save_clicked:
             try:
@@ -1342,29 +1339,8 @@ with tab3:
                 st.session_state["confirm_delete_all"] = False
                 st.rerun()
             else:
-                st.session_state["inventory_backup"] = df.drop(columns=["Delete?","Image"], errors="ignore").to_dict("records")
                 st.session_state["confirm_delete_all"] = True
                 st.warning("Are you sure? Click again to confirm")
-
-        if undo_clicked:
-            backup = st.session_state.get("inventory_backup")
-            if backup:
-                try:
-                    conn = sqlite3.connect(DB_PATH)
-                    for item in backup:
-                        conn.execute(
-                            "INSERT INTO inventory (item_name, category, price, stock_quantity, image_path) VALUES (?, ?, ?, ?, ?)",
-                            (item.get("Name"), item.get("Category"), item.get("Price"), int(item.get("Stock", 0)), item.get("Image") or None),
-                        )
-                    conn.commit()
-                    conn.close()
-                    st.success("Undo successful!")
-                    st.session_state["confirm_delete_all"] = False
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Undo failed: {e}")
-            else:
-                st.info("Nothing to undo.")
 
         # Low-stock warning
         low = [r[1] for r in all_rows if r[4] <= 5]
