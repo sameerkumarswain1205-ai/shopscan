@@ -692,6 +692,7 @@ with tab1:
             st.session_state.current_scan = row
             st.session_state.manual_select = row["item_name"]
             st.success(f"\u2705 Matched: **{row['item_name']}**  (score={match_count})")
+            st.session_state.scroll_to_result = True
         else:
             if match_count > 0:
                 st.warning(
@@ -724,16 +725,29 @@ with tab1:
                     key=f"match_{match['id']}",
                 ):
                     st.session_state.current_scan = match
+                    st.session_state.scroll_to_result = True
                     st.rerun()
-            if not matches:
-                st.caption("No items found")
-    else:
-        st.info("No products in inventory yet. Go to the Admin tab to add some.")
+
+        # Independent reset button
+        if st.button("\U0001f504 Reset Scanner", use_container_width=True):
+            st.session_state.current_scan = None
+            st.session_state.scan_key += 1
+            st.rerun()
+
+        else:
+            st.info("No products in inventory yet. Go to the Admin tab to add some.")
 
     # -- Display scanned product & action buttons --
+    st.markdown('<div id="result"></div>', unsafe_allow_html=True)
     scanned_product = st.session_state.current_scan
 
     if scanned_product is not None:
+        if st.session_state.pop("scroll_to_result", False):
+            st.markdown("""
+<script>
+setTimeout(() => document.getElementById('result')?.scrollIntoView({behavior: 'smooth'}), 100);
+</script>
+""", unsafe_allow_html=True)
         col1, col2 = st.columns([1, 2])
         with col1:
             if scanned_product["image_data"]:
