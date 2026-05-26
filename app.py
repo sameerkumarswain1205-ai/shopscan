@@ -729,13 +729,13 @@ with tab1:
                     st.rerun()
 
         # Independent reset button
-        if st.button("\U0001f504 Reset Scanner", use_container_width=True):
+        if st.button("\U0001f504 Reset Scanner", key="reset_search", use_container_width=True):
             st.session_state.current_scan = None
             st.session_state.scan_key += 1
             st.rerun()
 
-        else:
-            st.info("No products in inventory yet. Go to the Admin tab to add some.")
+    else:
+        st.info("No products in inventory yet. Go to the Admin tab to add some.")
 
     # -- Display scanned product & action buttons --
     st.markdown('<div id="result"></div>', unsafe_allow_html=True)
@@ -791,7 +791,7 @@ setTimeout(() => document.getElementById('result')?.scrollIntoView({behavior: 's
                         key="add_qty"
                     )
                 with col_b:
-                    if st.button("\U0001f6d2 Add to Bill", use_container_width=True):
+                    if st.button("\U0001f6d2 Add to Bill", key="add_bill_scan", use_container_width=True):
                         already_in_cart_now = sum(
                             item["qty"] for item in st.session_state.cart
                             if item["id"] == scanned_product["id"]
@@ -809,7 +809,7 @@ setTimeout(() => document.getElementById('result')?.scrollIntoView({behavior: 's
                             st.rerun()
 
         # Independent reset button
-        if st.button("\U0001f504 Reset Scanner", use_container_width=True):
+        if st.button("\U0001f504 Reset Scanner", key="reset_scan", use_container_width=True):
             st.session_state.current_scan = None
             st.session_state.scan_key += 1
             st.rerun()
