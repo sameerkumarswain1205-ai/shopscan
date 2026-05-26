@@ -30,7 +30,7 @@ import tempfile
 from datetime import datetime
 
 import pandas as pd
-from PIL import Image, ImageFilter
+from PIL import Image
 
 st.markdown("""
 <style>
@@ -187,337 +187,51 @@ def clear_transaction_history():
 
 
 # ---------------------------------------------------------------------------
-# IMAGE MATCHING  (Scale-Invariant Multi-Feature Ensemble)
+# GEMINI AI VISION MATCHING
 # ---------------------------------------------------------------------------
-# Matching helpers ----------------------------------------------------------
 
-def _decode_gray(image_bytes):
-    return Image.open(io.BytesIO(image_bytes)).convert("L")
+import google.generativeai as genai
 
 
-def _decode_color(image_bytes):
-    return Image.open(io.BytesIO(image_bytes)).convert("RGB")
-
-
-def _img_to_bytes(img):
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG")
-    return buf.getvalue()
-
-
-# Foreground extraction -----------------------------------------------------
-
-def extract_foreground(image_bytes, min_area_ratio=0.05, padding=0.20):
-    img = _decode_color(image_bytes)
-    if img is None:
-        return None
-    return _img_to_bytes(img)
-
-
-def detect_blur(image_bytes, threshold=120.0):
-    """Check if image is too blurry using Laplacian variance (PIL-only)."""
-    img = _decode_gray(image_bytes)
-    if img is None:
-        return True, 0.0
-    from PIL import ImageFilter
-    lap = img.filter(ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1))
-    pixels = list(lap.getdata())
-    mean = sum(pixels) / len(pixels)
-    variance = sum((p - mean) ** 2 for p in pixels) / len(pixels)
-    return variance < threshold, variance
-
-
-def detect_brightness(image_bytes, min_brightness=30, max_brightness=220):
-    """Check if image is too dark or too bright."""
-    img = _decode_gray(image_bytes)
-    if img is None:
-        return True, 0.0
-    arr = list(img.getdata())
-    mean = sum(arr) / len(arr)
-    return mean < min_brightness or mean > max_brightness, mean
-
-
-# Feature computation -------------------------------------------------------
-
-def _corr(a, b):
-    n = len(a)
-    if n == 0:
-        return 0.0
-    m1 = sum(a) / n
-    m2 = sum(b) / n
-    num = sum((x - m1) * (y - m2) for x, y in zip(a, b))
-    d1 = sum((x - m1) ** 2 for x in a)
-    d2 = sum((y - m2) ** 2 for y in b)
-    if d1 == 0 or d2 == 0:
-        return 0.0
-    return num / (d1 ** 0.5 * d2 ** 0.5)
-
-
-def compute_descriptor(gray_img):
-    if gray_img is None:
-        return None
-    h = gray_img.histogram()
-    total = sum(h)
-    if total == 0:
-        return None
-    return [v / total for v in h]
-
-
-def match_descriptors(d1, d2):
-    if d1 is None or d2 is None or len(d1) == 0 or len(d2) == 0:
-        return 0
-    return int(_corr(d1, d2) * 100)
-
-
-def compute_histogram(img):
-    if img is None:
-        return None
-    hsv = img.convert("HSV")
-    hist = hsv.histogram()
-    total = sum(hist)
-    if total == 0:
-        return None
-    return [v / total for v in hist]
-
-
-def compare_histograms(hist1, hist2):
-    if hist1 is None or hist2 is None:
-        return 0.0
-    return max(0.0, _corr(hist1, hist2))
-
-
-def compute_edge_map(gray_img, target_size=(120, 120)):
-    if gray_img is None:
-        return None
-    return gray_img.filter(ImageFilter.FIND_EDGES).resize(target_size)
-
-
-def compare_edges(edges1, edges2):
-    if edges1 is None or edges2 is None:
-        return 0.0
-    return max(0.0, _corr(list(edges1.getdata()), list(edges2.getdata())))
-
-
-# Multi-scale query features ------------------------------------------------
-
-def build_multi_scale_features(img, scales=(0.55, 0.75, 1.0)):
-    if img is None:
-        return None, None, None
-
-    w, h = img.size
-    des_list, edge_list = [], []
-    hist_single = None
-
-    for s in scales:
-        nw, nh = int(w * s), int(h * s)
-        if nw < 40 or nh < 40:
-            continue
-        resized = img.resize((nw, nh))
-        gray = resized.convert("L")
-
-        des_list.append(compute_descriptor(gray))
-        edge_list.append(compute_edge_map(gray))
-
-        if hist_single is None:
-            hist_single = compute_histogram(resized)
-
-    return des_list, edge_list, hist_single
-
-
-# Multi-angle image-path helpers --------------------------------------------
-
-# In-memory product catalog built from the DB on each scan so the matching
-# loop always sees the freshest data.  Structure:
-#
-#   catalog = {
-#       "infinix charger": {
-#           "price": 450.0,
-#           "images": [
-#               "product_images/infinix_1.jpg",
-#               "product_images/infinix_2.jpg",
-#               "product_images/infinix_3.jpg",
-#           ],
-#           "row": <sqlite3.Row>,   # original DB row for stock / id
-#       },
-#       ...
-#   }
-
-
-def build_catalog():
-    """Read the full inventory and return a product-name-keyed dict."""
-    catalog = {}
-    for row in get_all_products():
-        row = dict(row)
-        name = row.get("item_name", "")
-        if not name:
-            continue
-        raw = (row.get("image_path") or "").strip()
-        images = [
-            p.strip() for p in raw.split("|") if p.strip() and os.path.isfile(p.strip())
-        ]
-        if not images:
-            continue
-        catalog[name] = {
-            "price": row.get("price", 0),
-            "images": images,
-            "row": row,
-        }
-    return catalog
-
-
-def get_image_paths(product):
+def gemini_match_image(image_bytes):
     """
-    Return a list of reference image paths for *product*.
-    Supports a single path or multiple paths separated by ``|``
-    (e.g. ``"front.jpg|back.jpg|side.jpg"``).
+    Send image to Gemini AI with the product inventory list.
+    Returns (product_row, status_message).
     """
-    raw = product.get("image_path") or ""
-    if not raw:
-        return []
-    parts = [p.strip() for p in raw.split("|") if p.strip()]
-    return [p for p in parts if os.path.isfile(p)]
+    api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY", "")
+    if not api_key:
+        return None, "Gemini API key not configured. Please set GEMINI_API_KEY in secrets."
 
+    genai.configure(api_key=api_key)
 
-def _score_against_ref(q_des_list, q_edge_list, q_hist, ref_bytes):
-    """Score one reference image against pre-computed query features.
-    Returns (combined, des_score_norm, hist_score, edge_score_norm)."""
-    ref_rgb = _decode_color(ref_bytes)
-    if ref_rgb is None:
-        return (0.0, 0.0, 0.0, 0.0)
+    products = get_all_products()
+    if not products:
+        return None, "No products in database"
 
-    ref_gray = ref_rgb.convert("L")
-    ref_des = compute_descriptor(ref_gray)
-    ref_hist = compute_histogram(ref_rgb)
-    ref_edge = compute_edge_map(ref_gray)
+    product_names = [p["item_name"] for p in products]
+    product_list_str = ", ".join(f'"{name}"' for name in product_names)
 
-    # Descriptor — best across query scales
-    des_score = 0.0
-    if ref_des is not None and q_des_list:
-        for q_des in q_des_list:
-            cnt = match_descriptors(q_des, ref_des)
-            if cnt > des_score:
-                des_score = cnt
-    des_norm = min(des_score / 100.0, 1.0)
+    prompt = (
+        f"Look at this product image. From the following list of products "
+        f"in my inventory: {product_list_str} \u2014 which product does this "
+        f"image most likely show? Reply with ONLY the product name exactly as "
+        f"listed, or reply \u2018NO_MATCH\u2019 if you are not confident."
+    )
 
-    # Histogram (inherently scale-invariant)
-    hist_score = compare_histograms(q_hist, ref_hist) if q_hist is not None else 0.0
+    try:
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        img = Image.open(io.BytesIO(image_bytes))
+        response = model.generate_content([prompt, img])
+    except Exception as e:
+        return None, f"Gemini API error: {e}"
 
-    # Edges — best across query scales
-    edge_score = 0.0
-    if ref_edge is not None and q_edge_list:
-        for q_edge in q_edge_list:
-            sc = compare_edges(q_edge, ref_edge)
-            if sc > edge_score:
-                edge_score = sc
+    reply = response.text.strip().strip('"').strip("'")
 
-    combined = 0.30 * des_norm + 0.40 * hist_score + 0.30 * edge_score
+    for p in products:
+        if p["item_name"].lower() == reply.lower():
+            return p, None
 
-    return (combined, des_norm, hist_score, edge_score)
-
-
-# Main matching entry point -------------------------------------------------
-
-def find_best_match(uploaded_bytes, scales=(0.55, 0.75, 1.0)):
-    """
-    Multi-method validated matching:
-      1. Image quality check (blur / brightness).
-      2. Extract foreground bounding box.
-      3. Build multi-scale query features (descriptor / histogram / edges).
-      4. Build in-memory catalog from DB.
-      5. For each product, score all angles with all 3 methods.
-      6. Accept match only if ≥ 2 methods score ≥ 0.85 on the same product.
-      7. Combined threshold raised to 0.90.
-
-    Returns (product_row, confidence_0_100, confidence_label, status_message).
-    """
-    # ---------- 0.  Image quality check ----------
-    blurry, blur_val = detect_blur(uploaded_bytes)
-    too_dark_or_bright, bright_val = detect_brightness(uploaded_bytes)
-    if blurry:
-        return None, 0, "N/A", "Image too blurry \u2013 please retake"
-    if too_dark_or_bright:
-        return None, 0, "N/A", "Image too dark or bright \u2013 please retake"
-
-    # ---------- 1.  Foreground extraction ----------
-    fg_bytes = extract_foreground(uploaded_bytes)
-    if fg_bytes is None:
-        fg_bytes = uploaded_bytes
-
-    bgr = _decode_color(fg_bytes)
-    if bgr is None:
-        return None, 0, "N/A", "Could not process image"
-
-    # ---------- 2.  Multi-scale query features ----------
-    q_des_list, q_edge_list, q_hist = build_multi_scale_features(bgr, scales)
-    if q_des_list is None and q_edge_list is None and q_hist is None:
-        return None, 0, "N/A", "Could not extract features from image"
-
-    # ---------- 3.  Build catalog ----------
-    catalog = build_catalog()
-
-    METHOD_THRESHOLD = 0.85
-    COMBINED_THRESHOLD = 0.90
-
-    scored = []  # (combined_score, product_row, methods_agree_count)
-
-    for prod_name, entry in catalog.items():
-        images = entry["images"]
-        best_combined = 0.0
-        best_des = 0.0
-        best_hist = 0.0
-        best_edge = 0.0
-
-        for angle_path in images:
-            with open(angle_path, "rb") as f:
-                ref_bytes = f.read()
-
-            combined, des_norm, hist_score, edge_score = _score_against_ref(
-                q_des_list, q_edge_list, q_hist, ref_bytes
-            )
-            if combined > best_combined:
-                best_combined = combined
-                best_des = des_norm
-                best_hist = hist_score
-                best_edge = edge_score
-
-        # Count how many methods agree at ≥ 0.85
-        methods_agree = 0
-        if best_des >= METHOD_THRESHOLD:
-            methods_agree += 1
-        if best_hist >= METHOD_THRESHOLD:
-            methods_agree += 1
-        if best_edge >= METHOD_THRESHOLD:
-            methods_agree += 1
-
-        scored.append((best_combined, entry["row"], methods_agree))
-
-    if not scored:
-        return None, 0, "N/A", "No products in database"
-
-    # Sort by combined score descending
-    scored.sort(key=lambda x: x[0], reverse=True)
-    best_row = scored[0][1]
-    best_combined = scored[0][0]
-    best_methods = scored[0][2]
-
-    raw_score = int(min(best_combined, 1.0) * 100)
-
-    # Determine confidence label
-    if raw_score >= 92:
-        confidence_label = "High"
-    elif raw_score >= 90:
-        confidence_label = "Low"
-    else:
-        confidence_label = "N/A"
-
-    # Validate: must have combined ≥ 0.90 AND at least 2 methods agreeing
-    if best_combined >= COMBINED_THRESHOLD and best_methods >= 2:
-        return best_row, raw_score, confidence_label, None
-
-    if best_methods >= 1 and best_methods < 2:
-        return None, raw_score, "N/A", "Uncertain match \u2013 please confirm or retake"
-
-    return None, raw_score, "N/A", "No confident match found. Please search manually or retake photo."
+    return None, "No confident match found. Please search manually or retake photo."
 
 
 # ---------------------------------------------------------------------------
@@ -730,17 +444,15 @@ with tab1:
     # Process the image bytes from whichever source — runs ONCE
     if source_bytes is not None:
         with st.spinner("Identifying item..."):
-            row, match_count, confidence_label, status_msg = find_best_match(source_bytes)
+            row, status_msg = gemini_match_image(source_bytes)
 
         if row is not None:
             st.session_state.current_scan = row
             st.session_state.manual_select = row["item_name"]
-            label_part = f" ({confidence_label} confidence)" if confidence_label and confidence_label != "N/A" else ""
-            st.success(f"\u2705 Matched: **{row['item_name']}**  (score={match_count}{label_part})")
+            st.success(f"\u2705 Matched: **{row['item_name']}**")
             st.session_state.scroll_to_result = True
         else:
-            msg = status_msg or f"No confident match found (best score={match_count}). Please search manually or retake photo."
-            st.warning(f"\u26a0\ufe0f {msg}")
+            st.warning(f"\u26a0\ufe0f {status_msg}")
 
     # -- Manual fallback dropdown (always available) --
     st.markdown("---")
