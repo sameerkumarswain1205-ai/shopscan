@@ -198,11 +198,7 @@ def gemini_match_image(image_bytes):
     Send image to Gemini AI with the product inventory list.
     Returns (product_row, status_message).
     """
-    api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY", "")
-    if not api_key:
-        return None, "Gemini API key not configured. Please set GEMINI_API_KEY in secrets."
-
-    genai.configure(api_key=api_key)
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
     products = get_all_products()
     if not products:
