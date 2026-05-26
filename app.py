@@ -1223,7 +1223,7 @@ with tab3:
         all_rows = conn.execute("SELECT * FROM inventory ORDER BY id ASC").fetchall()
 
     if not all_rows:
-        st.info("Inventory is empty. Add your first product above.")
+        st.info("No products yet. Add your first product!")
     else:
         df = pd.DataFrame(
             [
