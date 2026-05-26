@@ -214,6 +214,29 @@ def extract_foreground(image_bytes, min_area_ratio=0.05, padding=0.20):
     return _img_to_bytes(img)
 
 
+def detect_blur(image_bytes, threshold=120.0):
+    """Check if image is too blurry using Laplacian variance (PIL-only)."""
+    img = _decode_gray(image_bytes)
+    if img is None:
+        return True, 0.0
+    from PIL import ImageFilter
+    lap = img.filter(ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1))
+    pixels = list(lap.getdata())
+    mean = sum(pixels) / len(pixels)
+    variance = sum((p - mean) ** 2 for p in pixels) / len(pixels)
+    return variance < threshold, variance
+
+
+def detect_brightness(image_bytes, min_brightness=30, max_brightness=220):
+    """Check if image is too dark or too bright."""
+    img = _decode_gray(image_bytes)
+    if img is None:
+        return True, 0.0
+    arr = list(img.getdata())
+    mean = sum(arr) / len(arr)
+    return mean < min_brightness or mean > max_brightness, mean
+
+
 # Feature computation -------------------------------------------------------
 
 def _corr(a, b):
@@ -356,10 +379,11 @@ def get_image_paths(product):
 
 
 def _score_against_ref(q_des_list, q_edge_list, q_hist, ref_bytes):
-    """Score one reference image against pre-computed query features."""
+    """Score one reference image against pre-computed query features.
+    Returns (combined, des_score_norm, hist_score, edge_score_norm)."""
     ref_rgb = _decode_color(ref_bytes)
     if ref_rgb is None:
-        return 0.0
+        return (0.0, 0.0, 0.0, 0.0)
 
     ref_gray = ref_rgb.convert("L")
     ref_des = compute_descriptor(ref_gray)
@@ -367,7 +391,7 @@ def _score_against_ref(q_des_list, q_edge_list, q_hist, ref_bytes):
     ref_edge = compute_edge_map(ref_gray)
 
     # Descriptor — best across query scales
-    des_score = 0
+    des_score = 0.0
     if ref_des is not None and q_des_list:
         for q_des in q_des_list:
             cnt = match_descriptors(q_des, ref_des)
@@ -388,33 +412,31 @@ def _score_against_ref(q_des_list, q_edge_list, q_hist, ref_bytes):
 
     combined = 0.30 * des_norm + 0.40 * hist_score + 0.30 * edge_score
 
-    if des_score >= 50:
-        combined = max(combined, 0.85)
-    if hist_score >= 0.85:
-        combined = max(combined, 0.85)
-    if edge_score >= 0.85:
-        combined = max(combined, 0.85)
-
-    return combined
+    return (combined, des_norm, hist_score, edge_score)
 
 
 # Main matching entry point -------------------------------------------------
 
 def find_best_match(uploaded_bytes, scales=(0.55, 0.75, 1.0)):
     """
-    Multi-angle scale-invariant ensemble:
-      1. Extract foreground bounding box.
-      2. Build multi-scale query features (ORB / edge / histogram).
-      3. Build an in-memory catalog from the DB where each product holds a
-         **list** of reference-image paths (front, back, side, etc.).
-      4. For each product, iterate through *all* its images and keep the
-         **maximum** score across angles.
-      5. Short-circuit: if any angle scores ≥ 0.85, lock that product
-         immediately and return.
-      6. Adaptive dominance thresholding for the final decision.
+    Multi-method validated matching:
+      1. Image quality check (blur / brightness).
+      2. Extract foreground bounding box.
+      3. Build multi-scale query features (descriptor / histogram / edges).
+      4. Build in-memory catalog from DB.
+      5. For each product, score all angles with all 3 methods.
+      6. Accept match only if ≥ 2 methods score ≥ 0.85 on the same product.
+      7. Combined threshold raised to 0.90.
 
-    Returns (product_row, confidence_0_100) or (None, score).
+    Returns (product_row, confidence_0_100, confidence_label, status_message).
     """
+    # ---------- 0.  Image quality check ----------
+    blurry, blur_val = detect_blur(uploaded_bytes)
+    too_dark_or_bright, bright_val = detect_brightness(uploaded_bytes)
+    if blurry:
+        return None, 0, "N/A", "Image too blurry \u2013 please retake"
+    if too_dark_or_bright:
+        return None, 0, "N/A", "Image too dark or bright \u2013 please retake"
 
     # ---------- 1.  Foreground extraction ----------
     fg_bytes = extract_foreground(uploaded_bytes)
@@ -423,58 +445,79 @@ def find_best_match(uploaded_bytes, scales=(0.55, 0.75, 1.0)):
 
     bgr = _decode_color(fg_bytes)
     if bgr is None:
-        return None, 0
+        return None, 0, "N/A", "Could not process image"
 
     # ---------- 2.  Multi-scale query features ----------
     q_des_list, q_edge_list, q_hist = build_multi_scale_features(bgr, scales)
     if q_des_list is None and q_edge_list is None and q_hist is None:
-        return None, 0
+        return None, 0, "N/A", "Could not extract features from image"
 
-    # ---------- 3.  Build catalog (name → {price, images[], row}) ----------
+    # ---------- 3.  Build catalog ----------
     catalog = build_catalog()
-    scored = []  # (combined_score, product_row)
+
+    METHOD_THRESHOLD = 0.85
+    COMBINED_THRESHOLD = 0.90
+
+    scored = []  # (combined_score, product_row, methods_agree_count)
 
     for prod_name, entry in catalog.items():
         images = entry["images"]
-        best_angle_score = 0.0
+        best_combined = 0.0
+        best_des = 0.0
+        best_hist = 0.0
+        best_edge = 0.0
 
         for angle_path in images:
             with open(angle_path, "rb") as f:
                 ref_bytes = f.read()
 
-            score = _score_against_ref(q_des_list, q_edge_list, q_hist, ref_bytes)
-            if score > best_angle_score:
-                best_angle_score = score
+            combined, des_norm, hist_score, edge_score = _score_against_ref(
+                q_des_list, q_edge_list, q_hist, ref_bytes
+            )
+            if combined > best_combined:
+                best_combined = combined
+                best_des = des_norm
+                best_hist = hist_score
+                best_edge = edge_score
 
-            # ----------  Short-circuit: ≥ 0.85 → instant lock ----------
-            if best_angle_score >= 0.85:
-                break
+        # Count how many methods agree at ≥ 0.85
+        methods_agree = 0
+        if best_des >= METHOD_THRESHOLD:
+            methods_agree += 1
+        if best_hist >= METHOD_THRESHOLD:
+            methods_agree += 1
+        if best_edge >= METHOD_THRESHOLD:
+            methods_agree += 1
 
-        scored.append((best_angle_score, entry["row"]))
-
-        if best_angle_score >= 0.85:
-            # This product is a near-certain match — short-circuit the
-            # outer loop and return immediately.
-            scored.sort(key=lambda x: x[0], reverse=True)
-            return scored[0][1], 85
+        scored.append((best_combined, entry["row"], methods_agree))
 
     if not scored:
-        return None, 0
+        return None, 0, "N/A", "No products in database"
 
-    # ----------  Adaptive dominance threshold ----------
+    # Sort by combined score descending
     scored.sort(key=lambda x: x[0], reverse=True)
     best_row = scored[0][1]
-    best_score = scored[0][0]
+    best_combined = scored[0][0]
+    best_methods = scored[0][2]
 
-    dominance = 1.0
-    if len(scored) > 1 and scored[1][0] > 0:
-        dominance = best_score / scored[1][0]
+    raw_score = int(min(best_combined, 1.0) * 100)
 
-    threshold = 0.85
+    # Determine confidence label
+    if raw_score >= 92:
+        confidence_label = "High"
+    elif raw_score >= 90:
+        confidence_label = "Low"
+    else:
+        confidence_label = "N/A"
 
-    if best_score >= threshold:
-        return best_row, int(min(best_score, 1.0) * 100)
-    return None, int(min(best_score, 1.0) * 100)
+    # Validate: must have combined ≥ 0.90 AND at least 2 methods agreeing
+    if best_combined >= COMBINED_THRESHOLD and best_methods >= 2:
+        return best_row, raw_score, confidence_label, None
+
+    if best_methods >= 1 and best_methods < 2:
+        return None, raw_score, "N/A", "Uncertain match \u2013 please confirm or retake"
+
+    return None, raw_score, "N/A", "No confident match found. Please search manually or retake photo."
 
 
 # ---------------------------------------------------------------------------
@@ -687,23 +730,17 @@ with tab1:
     # Process the image bytes from whichever source — runs ONCE
     if source_bytes is not None:
         with st.spinner("Identifying item..."):
-            row, match_count = find_best_match(source_bytes)
+            row, match_count, confidence_label, status_msg = find_best_match(source_bytes)
 
         if row is not None:
             st.session_state.current_scan = row
             st.session_state.manual_select = row["item_name"]
-            st.success(f"\u2705 Matched: **{row['item_name']}**  (score={match_count})")
+            label_part = f" ({confidence_label} confidence)" if confidence_label and confidence_label != "N/A" else ""
+            st.success(f"\u2705 Matched: **{row['item_name']}**  (score={match_count}{label_part})")
             st.session_state.scroll_to_result = True
         else:
-            if match_count > 0:
-                st.warning(
-                    f"\u26a0\ufe0f No confident match found (best score={match_count}). "
-                    "Please search manually or retake photo."
-                )
-            else:
-                st.warning(
-                    "\u26a0\ufe0f No confident match found. Please search manually or retake photo."
-                )
+            msg = status_msg or f"No confident match found (best score={match_count}). Please search manually or retake photo."
+            st.warning(f"\u26a0\ufe0f {msg}")
 
     # -- Manual fallback dropdown (always available) --
     st.markdown("---")
