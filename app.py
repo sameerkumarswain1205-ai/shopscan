@@ -192,14 +192,34 @@ def clear_transaction_history():
 
 import google.generativeai as genai
 
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _gemini_cached(image_bytes_tuple, product_list_str):
+    """Cached Gemini API call. Returns response text or sentinel strings."""
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        img = Image.open(io.BytesIO(bytes(image_bytes_tuple)))
+        prompt = (
+            f"Look at this product image. From the following list of products "
+            f"in my inventory: {product_list_str} \u2014 which product does this "
+            f"image most likely show? Reply with ONLY the product name exactly as "
+            f"listed, or reply \u2018NO_MATCH\u2019 if you are not confident."
+        )
+        response = model.generate_content([prompt, img])
+        return response.text
+    except Exception as e:
+        error_str = str(e)
+        if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+            return "__QUOTA_EXCEEDED__"
+        return f"__ERROR__:{error_str}"
+
 
 def gemini_match_image(image_bytes):
     """
-    Send image to Gemini AI with the product inventory list.
-    Returns (product_row, status_message).
+    Call Gemini via cache. Returns (product_row, status_message).
     """
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-
     products = get_all_products()
     if not products:
         return None, "No products in database"
@@ -207,21 +227,15 @@ def gemini_match_image(image_bytes):
     product_names = [p["item_name"] for p in products]
     product_list_str = ", ".join(f'"{name}"' for name in product_names)
 
-    prompt = (
-        f"Look at this product image. From the following list of products "
-        f"in my inventory: {product_list_str} \u2014 which product does this "
-        f"image most likely show? Reply with ONLY the product name exactly as "
-        f"listed, or reply \u2018NO_MATCH\u2019 if you are not confident."
-    )
+    reply = _gemini_cached(bytes(image_bytes), product_list_str)
 
-    try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        img = Image.open(io.BytesIO(image_bytes))
-        response = model.generate_content([prompt, img])
-    except Exception as e:
-        return None, f"Gemini API error: {e}"
+    if reply == "__QUOTA_EXCEEDED__":
+        return None, "Quota reached, please try later"
 
-    reply = response.text.strip().strip('"').strip("'")
+    if reply.startswith("__ERROR__:"):
+        return None, reply[len("__ERROR__:"):]
+
+    reply = reply.strip().strip('"').strip("'")
 
     for p in products:
         if p["item_name"].lower() == reply.lower():
@@ -254,6 +268,8 @@ def init_cart():
         st.session_state.selected_category = "Electrical"
     if "confirm_delete_all" not in st.session_state:
         st.session_state.confirm_delete_all = False
+    if "pending_image" not in st.session_state:
+        st.session_state.pending_image = None
 
 
 
@@ -437,18 +453,24 @@ with tab1:
     elif uploaded_file is not None:
         source_bytes = uploaded_file.getvalue()
 
-    # Process the image bytes from whichever source — runs ONCE
+    # Store latest image for manual analysis (no auto-call)
     if source_bytes is not None:
-        with st.spinner("Identifying item..."):
-            row, status_msg = gemini_match_image(source_bytes)
+        st.session_state.pending_image = source_bytes
 
-        if row is not None:
-            st.session_state.current_scan = row
-            st.session_state.manual_select = row["item_name"]
-            st.success(f"\u2705 Matched: **{row['item_name']}**")
-            st.session_state.scroll_to_result = True
-        else:
-            st.warning(f"\u26a0\ufe0f {status_msg}")
+    if st.session_state.get("pending_image"):
+        if st.button("\U0001f680 Analyze Product", key="analyze_btn", use_container_width=True, type="primary"):
+            with st.spinner("Identifying item..."):
+                row, status_msg = gemini_match_image(st.session_state.pending_image)
+
+            if row is not None:
+                st.session_state.current_scan = row
+                st.session_state.manual_select = row["item_name"]
+                st.success(f"\u2705 Matched: **{row['item_name']}**")
+                st.session_state.scroll_to_result = True
+            else:
+                st.warning(f"\u26a0\ufe0f {status_msg}")
+    else:
+        st.info("Take a photo above, then click \u2018Analyze Product\u2019.")
 
     # -- Manual fallback dropdown (always available) --
     st.markdown("---")
