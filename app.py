@@ -388,12 +388,12 @@ def _score_against_ref(q_des_list, q_edge_list, q_hist, ref_bytes):
 
     combined = 0.30 * des_norm + 0.40 * hist_score + 0.30 * edge_score
 
-    if des_score >= 30:
-        combined = max(combined, 0.80)
+    if des_score >= 50:
+        combined = max(combined, 0.85)
     if hist_score >= 0.85:
         combined = max(combined, 0.85)
-    if edge_score >= 0.80:
-        combined = max(combined, 0.70)
+    if edge_score >= 0.85:
+        combined = max(combined, 0.85)
 
     return combined
 
@@ -470,9 +470,7 @@ def find_best_match(uploaded_bytes, scales=(0.55, 0.75, 1.0)):
     if len(scored) > 1 and scored[1][0] > 0:
         dominance = best_score / scored[1][0]
 
-    threshold = 0.28
-    if dominance >= 1.8:
-        threshold = 0.18
+    threshold = 0.85
 
     if best_score >= threshold:
         return best_row, int(min(best_score, 1.0) * 100)
