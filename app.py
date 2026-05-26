@@ -536,14 +536,6 @@ st.set_page_config(
     layout="centered",
 )
 
-st.markdown("""
-<style>
-div[data-testid="column"] {
-    padding: 0 !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
 st.markdown(
     """
 <script>
@@ -846,31 +838,18 @@ with tab2:
             </div>
         </div>
         """, unsafe_allow_html=True)
-            st.markdown(f"""
-<div style="display:flex; flex-direction:row; align-items:center; gap:8px; margin:8px 0 12px 0;">
-    <span style="color:#666; font-size:14px;">Qty:</span>
-    <span style="font-size:16px; font-weight:600; background:#f0f0f0; padding:6px 16px; border-radius:8px;">{item['qty']}</span>
-</div>
-""", unsafe_allow_html=True)
             col1, col2 = st.columns([3, 1])
             with col1:
-                new_qty = st.number_input("Update Qty", min_value=1,
-                                          value=item["qty"],
-                                          key=f"bill_qty_{i}")
+                new_qty = st.number_input(
+                    "Qty", min_value=1, value=item["qty"],
+                    key=f"bill_qty_{i}", label_visibility="visible",
+                )
             with col2:
-                if st.button("\U0001f5d1", key=f"del_{i}"):
+                st.write("")
+                st.write("")
+                if st.button("\U0001f5d1", key=f"bill_del_{i}", use_container_width=True):
                     st.session_state["cart"].pop(i)
                     st.rerun()
-            st.markdown("""
-<style>
-[data-testid="stHorizontalBlock"] {
-    align-items: end !important;
-}
-[data-testid="stNumberInput"] {
-    margin-bottom: 0 !important;
-}
-</style>
-""", unsafe_allow_html=True)
             if new_qty != item["qty"]:
                 st.session_state["cart"][i]["qty"] = new_qty
                 st.rerun()
