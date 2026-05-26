@@ -741,29 +741,31 @@ with tab1:
     # -- Manual fallback dropdown (always available) --
     st.markdown("---")
     all_prods = get_all_products()
-    prod_names = [p["item_name"] for p in all_prods]
-
-    if prod_names:
+    if not all_prods:
+        st.info("No products in inventory yet. Go to the Admin tab to add some.")
+    else:
         search_query = st.text_input(
             "\U0001f50d Search item...",
-            key=f"item_search_{st.session_state.search_key_counter}",
+            key=f"item_search_{st.session_state['search_key_counter']}",
         )
         if search_query:
-            matches = [
-                p for p in all_prods
-                if search_query.lower() in p["item_name"].lower()
-            ][:5]
+            conn = get_connection()
+            matches = conn.execute(
+                "SELECT * FROM inventory WHERE item_name LIKE ? LIMIT 5",
+                (f"%{search_query}%",)
+            ).fetchall()
+            conn.close()
             for match in matches:
+                match_dict = dict(match)
                 if st.button(
-                    f"{match['item_name']} \u2014 \u20b9{match['price']:.2f}",
-                    key=f"match_{match['id']}",
+                    f"{match_dict['item_name']} \u2014 \u20b9{match_dict['price']:.2f}",
+                    key=f"search_match_{match_dict['id']}",
                 ):
-                    st.session_state["matched_product"] = dict(match)
+                    st.session_state["matched_product"] = match_dict
+                    st.session_state["search_key_counter"] += 1
                     st.rerun()
             if not matches:
                 st.caption("No items found")
-    else:
-        st.info("No products in inventory yet. Go to the Admin tab to add some.")
 
 # ======================================================================
 # TAB 2 : CURRENT BILL & CHECKOUT
