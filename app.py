@@ -845,13 +845,12 @@ with tab2:
                     min_value=1,
                     value=item["qty"],
                     key=f"bill_qty_{i}",
+                    label_visibility="collapsed",
                 )
             with col_del:
-                st.markdown("<div style='margin-top:28px;'>", unsafe_allow_html=True)
                 if st.button("\U0001f5d1", key=f"bill_del_{i}"):
                     st.session_state["cart"].pop(i)
                     st.rerun()
-                st.markdown("</div>", unsafe_allow_html=True)
             if new_qty != item["qty"]:
                 st.session_state["cart"][i]["qty"] = new_qty
                 st.rerun()
