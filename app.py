@@ -187,61 +187,70 @@ def clear_transaction_history():
 
 
 # ---------------------------------------------------------------------------
-# GEMINI AI VISION MATCHING
+# YOLOv8 LOCAL VISION MATCHING
 # ---------------------------------------------------------------------------
 
-import google.generativeai as genai
+import numpy as np
+from ultralytics import YOLO
 
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+
+@st.cache_resource
+def load_yolo():
+    return YOLO("yolov8n.pt")
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _gemini_cached(image_bytes_tuple, product_list_str):
-    """Cached Gemini API call. Returns response text or sentinel strings."""
+def _yolo_predict(image_bytes_tuple):
+    """Run YOLO inference. Returns list of detected COCO class names."""
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = load_yolo()
         img = Image.open(io.BytesIO(bytes(image_bytes_tuple)))
-        prompt = (
-            f"Look at this product image. From the following list of products "
-            f"in my inventory: {product_list_str} \u2014 which product does this "
-            f"image most likely show? Reply with ONLY the product name exactly as "
-            f"listed, or reply \u2018NO_MATCH\u2019 if you are not confident."
-        )
-        response = model.generate_content([prompt, img])
-        return response.text
+        results = model.predict(source=np.array(img), conf=0.5, verbose=False)
+        detected = []
+        for r in results:
+            for c in r.boxes.cls:
+                name = model.names[int(c)]
+                if name not in detected:
+                    detected.append(name)
+        return detected
     except Exception as e:
-        error_str = str(e)
-        if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-            return "__QUOTA_EXCEEDED__"
-        return f"__ERROR__:{error_str}"
+        return f"__ERROR__:{e}"
 
 
-def gemini_match_image(image_bytes):
+def yolo_match_image(image_bytes):
     """
-    Call Gemini via cache. Returns (product_row, status_message).
+    YOLO local inference. Returns (product_row, status_message).
     """
     products = get_all_products()
     if not products:
         return None, "No products in database"
 
-    product_names = [p["item_name"] for p in products]
-    product_list_str = ", ".join(f'"{name}"' for name in product_names)
+    result = _yolo_predict(bytes(image_bytes))
 
-    reply = _gemini_cached(bytes(image_bytes), product_list_str)
+    if isinstance(result, str) and result.startswith("__ERROR__:"):
+        return None, result[len("__ERROR__:"):]
 
-    if reply == "__QUOTA_EXCEEDED__":
-        return None, "Quota reached, please try later"
+    if not result:
+        return None, "No confident match found. Please search manually or retake photo."
 
-    if reply.startswith("__ERROR__:"):
-        return None, reply[len("__ERROR__:"):]
+    detected_lower = [d.lower() for d in result]
 
-    reply = reply.strip().strip('"').strip("'")
-
+    best_product = None
+    best_score = 0
     for p in products:
-        if p["item_name"].lower() == reply.lower():
-            return p, None
+        pname_lower = p["item_name"].lower()
+        pname_words = set(pname_lower.replace("-", " ").replace("_", " ").split())
+        for det in detected_lower:
+            if det in pname_lower:
+                score = len(det) / max(len(pname_lower), 1)
+                if score > best_score:
+                    best_score = score
+                    best_product = p
 
-    return None, "No confident match found. Please search manually or retake photo."
+    if best_product and best_score > 0.25:
+        return best_product, None
+
+    return None, f"Detected: {', '.join(result)}. No inventory match found."
 
 
 # ---------------------------------------------------------------------------
@@ -460,7 +469,7 @@ with tab1:
     if st.session_state.get("pending_image"):
         if st.button("\U0001f680 Analyze Product", key="analyze_btn", use_container_width=True, type="primary"):
             with st.spinner("Identifying item..."):
-                row, status_msg = gemini_match_image(st.session_state.pending_image)
+                row, status_msg = yolo_match_image(st.session_state.pending_image)
 
             if row is not None:
                 st.session_state.current_scan = row
