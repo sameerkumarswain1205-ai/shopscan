@@ -838,15 +838,15 @@ with tab2:
             </div>
         </div>
         """, unsafe_allow_html=True)
-            col1, col2 = st.columns([3, 1])
+            col1, col2, col3 = st.columns([2, 1, 1])
             with col1:
-                new_qty = st.number_input(
-                    "Qty", min_value=1, value=item["qty"],
-                    key=f"bill_qty_{i}", label_visibility="visible",
-                )
+                st.write("Qty")
             with col2:
-                st.write("")
-                st.write("")
+                new_qty = st.number_input(
+                    "", min_value=1, value=item["qty"],
+                    key=f"bill_qty_{i}", label_visibility="collapsed",
+                )
+            with col3:
                 if st.button("\U0001f5d1", key=f"bill_del_{i}", use_container_width=True):
                     st.session_state["cart"].pop(i)
                     st.rerun()
