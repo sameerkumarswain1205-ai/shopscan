@@ -439,6 +439,12 @@ navigator.mediaDevices.getUserMedia = function(constraints) {
     }
     return _getUserMedia(constraints);
 };
+
+// Log to browser console for debugging
+window.onerror = function(msg, url, line) {
+    console.error("[App Error]", msg, "at", url, "line", line);
+};
+console.log("[App] Streamlit app loaded. Camera access requires HTTPS or localhost.");
 </script>
 """,
     unsafe_allow_html=True,
@@ -451,6 +457,10 @@ st.title("\U0001f50c ShopScan")
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────
 with st.sidebar:
+    if st.button("\U0001f514 Test UI Event Loop", use_container_width=True):
+        print("Button Clicked")  # visible in the terminal running streamlit
+        st.success("UI event loop is working!")
+
     st.subheader("\U0001f4e5 Backup & Export")
     if st.button("\U0001f4e5 Export Database to CSV", use_container_width=True):
         df = pd.read_sql_query(
