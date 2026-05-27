@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
 import '../database_helper.dart';
 import '../models/product.dart';
@@ -28,6 +29,10 @@ class _ScanScreenState extends State<ScanScreen> {
   final _searchFocus = FocusNode();
   final _picker = ImagePicker();
 
+  CameraController? _controller;
+  bool _isCameraActive = false;
+  String? _cameraError;
+
   Uint8List? _capturedBytes;
   bool _showCaptureResult = false;
 
@@ -40,13 +45,72 @@ class _ScanScreenState extends State<ScanScreen> {
   @override
   void initState() {
     super.initState();
+    _initCamera();
   }
 
   @override
   void dispose() {
+    _controller?.dispose();
     _searchCtrl.dispose();
     _searchFocus.dispose();
     super.dispose();
+  }
+
+  Future<void> _initCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        setState(() {
+          _isCameraActive = false;
+          _cameraError = 'No camera found on this device';
+        });
+        return;
+      }
+      final ctrl = CameraController(cameras[0], ResolutionPreset.medium);
+      await ctrl.initialize();
+      if (!mounted) return;
+      setState(() {
+        _controller?.dispose();
+        _controller = ctrl;
+        _isCameraActive = true;
+        _cameraError = null;
+      });
+    } catch (e) {
+      debugPrint('Camera init failed: $e');
+      if (mounted) {
+        setState(() {
+          _isCameraActive = false;
+          _cameraError = 'Camera unavailable: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _refreshCamera() async {
+    setState(() => _cameraError = null);
+    try {
+      await _controller?.dispose();
+      _controller = null;
+      _isCameraActive = false;
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        setState(() => _cameraError = 'No camera found on this device');
+        return;
+      }
+      final ctrl = CameraController(cameras[0], ResolutionPreset.medium);
+      await ctrl.initialize();
+      if (!mounted) return;
+      setState(() {
+        _controller = ctrl;
+        _isCameraActive = true;
+        _cameraError = null;
+      });
+    } catch (e) {
+      debugPrint('Camera refresh failed: $e');
+      if (mounted) {
+        setState(() => _cameraError = 'Camera refresh failed: $e');
+      }
+    }
   }
 
   Future<void> _capturePhoto() async {
@@ -176,7 +240,6 @@ class _ScanScreenState extends State<ScanScreen> {
       padding: const EdgeInsets.all(12),
       child: Column(
         children: [
-          // Heading
           const Text(
             '\u{1F4F7} Scan an item',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -188,29 +251,92 @@ class _ScanScreenState extends State<ScanScreen> {
           ),
           const SizedBox(height: 12),
 
-          // Image capture section
-          Container(
-            height: 200,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.camera_alt, size: 48, color: Colors.grey),
-                  SizedBox(height: 8),
-                  Text('Take a photo or upload an image',
-                      style: TextStyle(color: Colors.grey)),
-                ],
+          // Camera preview or error state
+          if (_cameraError != null)
+            Container(
+              height: 280,
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                      const SizedBox(height: 8),
+                      Text(
+                        _cameraError!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                      const SizedBox(height: 12),
+                      ElevatedButton.icon(
+                        onPressed: _refreshCamera,
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Retry Camera'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFE53935),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else if (_isCameraActive && _controller != null && _controller!.value.isInitialized)
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    height: 280,
+                    child: CameraPreview(_controller!),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.white, size: 24),
+                    onPressed: _refreshCamera,
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black54,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else
+            Container(
+              height: 280,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 32, height: 32,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(height: 8),
+                    Text('Starting camera...',
+                        style: TextStyle(color: Colors.grey)),
+                  ],
+                ),
               ),
             ),
-          ),
 
           const SizedBox(height: 12),
 
-          // "Take a photo of the item" label
           SizedBox(
             width: double.infinity,
             height: 44,
@@ -287,7 +413,7 @@ class _ScanScreenState extends State<ScanScreen> {
               ),
             ),
 
-          // Result message (inline, not snackbar)
+          // Result message
           if (_resultText != null && !_showCaptureResult)
             Container(
               width: double.infinity,
@@ -415,7 +541,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _addToBill,
                   icon: const Icon(Icons.add_shopping_cart, size: 20),
-                  label: Text('Add to Bill (\u20B9${(_matchedProduct!.price * _scanQty).toStringAsFixed(2)})'),
+                  label: Text('\u20B9${(_matchedProduct!.price * _scanQty).toStringAsFixed(2)}'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFE53935),
                     foregroundColor: Colors.white,
