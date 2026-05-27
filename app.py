@@ -355,6 +355,8 @@ def init_cart():
         st.session_state.selected_category = "Electrical"
     if "confirm_delete_all" not in st.session_state:
         st.session_state.confirm_delete_all = False
+    if "scan_active" not in st.session_state:
+        st.session_state.scan_active = False
 
 
 
@@ -440,7 +442,7 @@ init_cart()
 if not _OCR_AVAILABLE:
     st.info(
         "\U0001f6a7 Auto-scan disabled (OCR engine not available on this server). "
-        "Use **Upload from gallery** or **search** below to add products."
+        "Use **search** below to add products."
     )
 
 st.title("\U0001f50c ShopScan")
@@ -505,58 +507,64 @@ tab1, tab2, tab3 = st.tabs(["\U0001f4f7 Scan & Sell", "\U0001f4b0 Current Bill",
 # TAB 1 : SCAN & SELL
 # ======================================================================
 with tab1:
-    # ── Visual framing overlay for the camera viewfinder ──────────────
-    st.markdown(
-        """
-        <style>
-        [data-testid="stCameraInput"] {
-            position: relative !important;
-        }
-        [data-testid="stCameraInput"]::before {
-            content: "" !important;
-            position: absolute !important;
-            top: 15% !important;
-            left: 15% !important;
-            width: 70% !important;
-            height: 55% !important;
-            border: 3px dashed #39FF14 !important;
-            border-radius: 8px !important;
-            box-shadow: 0 0 10px rgba(57, 255, 20, 0.5) !important;
-            pointer-events: none !important;
-            z-index: 99 !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
     st.subheader("\U0001f4f7 Scan an item")
 
-    st.caption(
-        "\U0001f4a1 Tip: Center the item inside the dashed box for the best matching score."
-    )
-
-    # -- Camera input (dynamic key lets us force-reset the widget) --
-    camera_key = f"cam_{st.session_state.scan_key}"
-    try:
-        cam_img = st.camera_input("Take a photo of the item", key=camera_key)
-    except Exception:
-        st.warning(
-            "\u26a0\ufe0f Camera permission denied. Please click the lock icon "
-            "in your browser address bar to allow access, then click **Refresh Camera**."
-        )
+    # -- Lazy camera init: Start Camera button prevents instant camera load --
+    if not st.session_state.scan_active:
         cam_img = None
+        uploaded_file = None
+        if st.button("\U0001f4f7 Start Camera", use_container_width=True):
+            st.session_state.scan_active = True
+            st.rerun()
+    else:
+        # ── Visual framing overlay for the camera viewfinder ──────────────
+        st.markdown(
+            """
+            <style>
+            [data-testid="stCameraInput"] { position: relative !important; }
+            [data-testid="stCameraInput"]::before {
+                content: "" !important;
+                position: absolute !important;
+                top: 15% !important;
+                left: 15% !important;
+                width: 70% !important;
+                height: 55% !important;
+                border: 3px dashed #39FF14 !important;
+                border-radius: 8px !important;
+                box-shadow: 0 0 10px rgba(57, 255, 20, 0.5) !important;
+                pointer-events: none !important;
+                z-index: 99 !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    if st.button("Refresh Camera"):
-        st.rerun()
+        st.caption(
+            "\U0001f4a1 Tip: Center the item inside the dashed box for the best matching score."
+        )
 
-    # -- File uploader fallback (also uses dynamic key so reset clears it) --
-    upload_key = f"upload_{st.session_state.scan_key}"
-    uploaded_file = st.file_uploader(
-        "Or upload/snap a photo from device storage",
-        type=["jpg", "jpeg", "png", "webp"],
-        key=upload_key,
-    )
+        # -- Camera input (dynamic key lets us force-reset the widget) --
+        camera_key = f"cam_{st.session_state.scan_key}"
+        try:
+            cam_img = st.camera_input("Take a photo of the item", key=camera_key)
+        except Exception:
+            st.warning(
+                "\u26a0\ufe0f Camera permission denied. Please click the lock icon "
+                "in your browser address bar to allow access, then click **Refresh Camera**."
+            )
+            cam_img = None
+
+        if st.button("Refresh Camera"):
+            st.rerun()
+
+        # -- File uploader fallback (also uses dynamic key so reset clears it) --
+        upload_key = f"upload_{st.session_state.scan_key}"
+        uploaded_file = st.file_uploader(
+            "Or upload/snap a photo from device storage",
+            type=["jpg", "jpeg", "png", "webp"],
+            key=upload_key,
+        )
 
     # Determine which source to use (camera takes priority)
     source_bytes = None
@@ -635,6 +643,7 @@ setTimeout(() => document.getElementById('result')?.scrollIntoView({behavior: 's
                             st.session_state.current_scan = None
                             st.session_state.scan_key += 1
                             st.session_state.search_key_counter += 1
+                            st.session_state.scan_active = False
                             st.rerun()
             else:
                 st.error("OUT OF STOCK")
@@ -643,6 +652,7 @@ setTimeout(() => document.getElementById('result')?.scrollIntoView({behavior: 's
         if st.button("\U0001f504 Reset Scanner", key="reset_scan", use_container_width=True):
             st.session_state.current_scan = None
             st.session_state.scan_key += 1
+            st.session_state.scan_active = False
             st.rerun()
 
         st.markdown("---")
@@ -674,6 +684,7 @@ setTimeout(() => document.getElementById('result')?.scrollIntoView({behavior: 's
         if st.button("\U0001f504 Reset Scanner", key="reset_search", use_container_width=True):
             st.session_state.current_scan = None
             st.session_state.scan_key += 1
+            st.session_state.scan_active = False
             st.rerun()
     else:
         st.info("No products in inventory yet. Go to the Admin tab to add some.")
@@ -699,7 +710,7 @@ with tab2:
             </div>
         </div>
         """, unsafe_allow_html=True)
-            col1, col2 = st.columns([3, 1])
+            col1, col2, col3 = st.columns([2, 1, 1])
             with col1:
                 new_qty = st.number_input(
                     "Qty", min_value=1, value=item["qty"],
@@ -708,12 +719,15 @@ with tab2:
             with col2:
                 st.write("")
                 st.write("")
+                if st.button("\U0001f4c5 Update", key=f"bill_upd_{i}", use_container_width=True):
+                    st.session_state["cart"][i]["qty"] = new_qty
+                    st.rerun()
+            with col3:
+                st.write("")
+                st.write("")
                 if st.button("\U0001f5d1", key=f"bill_del_{i}", use_container_width=True):
                     st.session_state["cart"].pop(i)
                     st.rerun()
-            if new_qty != item["qty"]:
-                st.session_state["cart"][i]["qty"] = new_qty
-                st.rerun()
             st.divider()
 
         total = sum(item["price"] * item["qty"] for item in st.session_state["cart"])
