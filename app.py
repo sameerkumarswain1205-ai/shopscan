@@ -377,6 +377,8 @@ def init_cart():
         st.session_state.capture_step = 0  # 0=idle, 1-4=capturing
     if "camera_active" not in st.session_state:
         st.session_state.camera_active = False
+    if "camera_refresh" not in st.session_state:
+        st.session_state.camera_refresh = 0
     if "preview_capture" not in st.session_state:
         st.session_state.preview_capture = None
     if "search_key_counter" not in st.session_state:
@@ -889,10 +891,11 @@ with tab3:
 
     if camera_on:
         step = st.session_state.capture_step
-        print(f"[Debug] Admin camera active, step={step}, scan_key={st.session_state.scan_key}")
+        refresh = st.session_state.camera_refresh
+        print(f"[Debug] Admin camera active, step={step}, refresh={refresh}, scan_key={st.session_state.scan_key}")
         st.write(f"**Photos taken: {step} / 4**")
         try:
-            img = st.camera_input(" ", key=f"cap_cam_{step}", label_visibility="collapsed")
+            img = st.camera_input(" ", key=f"cap_cam_{step}_r{refresh}", label_visibility="collapsed")
         except Exception as e:
             print(f"[Camera Error] Admin st.camera_input() failed: {e}")
             st.error(f"Camera initialization failed: {e}")
@@ -907,11 +910,17 @@ with tab3:
             st.rerun()
         else:
             st.caption("⏳ Camera active — take a photo to capture.")
-        if st.button("Skip", use_container_width=True):
-            print("[Debug] Admin camera skipped by user")
-            st.session_state.camera_active = False
-            st.session_state.capture_step = 0
-            st.rerun()
+        col_refresh, col_skip = st.columns(2)
+        with col_refresh:
+            if st.button("\U0001f504 Refresh Camera", use_container_width=True):
+                st.session_state.camera_refresh += 1
+                st.rerun()
+        with col_skip:
+            if st.button("Skip", use_container_width=True):
+                print("[Debug] Admin camera skipped by user")
+                st.session_state.camera_active = False
+                st.session_state.capture_step = 0
+                st.rerun()
     else:
         qp = st.query_params
         if "cap_preview" in qp:
