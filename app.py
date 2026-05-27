@@ -554,39 +554,6 @@ with tab1:
         else:
             st.error(f"\u274c No matching product found")
 
-    # -- Manual fallback dropdown (always available) --
-    st.markdown("---")
-    all_prods = get_all_products()
-    prod_names = [p["item_name"] for p in all_prods]
-
-    if prod_names:
-        search_query = st.text_input(
-            "\U0001f50d Search item...",
-            key=f"item_search_{st.session_state.search_key_counter}",
-        )
-        if search_query:
-            matches = [
-                p for p in all_prods
-                if search_query.lower() in p["item_name"].lower()
-            ][:5]
-            for match in matches:
-                if st.button(
-                    f"{match['item_name']} \u2014 \u20b9{match['price']:.2f}",
-                    key=f"match_{match['id']}",
-                ):
-                    st.session_state.current_scan = match
-                    st.session_state.scroll_to_result = True
-                    st.rerun()
-
-        # Independent reset button
-        if st.button("\U0001f504 Reset Scanner", key="reset_search", use_container_width=True):
-            st.session_state.current_scan = None
-            st.session_state.scan_key += 1
-            st.rerun()
-
-    else:
-        st.info("No products in inventory yet. Go to the Admin tab to add some.")
-
     # -- Display scanned product & action buttons --
     st.markdown('<div id="result"></div>', unsafe_allow_html=True)
     scanned_product = st.session_state.current_scan
@@ -654,8 +621,38 @@ setTimeout(() => document.getElementById('result')?.scrollIntoView({behavior: 's
             st.session_state.scan_key += 1
             st.rerun()
 
+        st.markdown("---")
+
     else:
         st.info("Point your camera at an item or select one from the dropdown above.")
+
+    # -- Manual fallback search (always visible below product card) --
+    all_prods = get_all_products()
+    if all_prods:
+        search_query = st.text_input(
+            "\U0001f50d Search item...",
+            key=f"item_search_{st.session_state.search_key_counter}",
+        )
+        if search_query:
+            matches = [
+                p for p in all_prods
+                if search_query.lower() in p["item_name"].lower()
+            ][:5]
+            for match in matches:
+                if st.button(
+                    f"{match['item_name']} \u2014 \u20b9{match['price']:.2f}",
+                    key=f"match_{match['id']}",
+                ):
+                    st.session_state.current_scan = match
+                    st.session_state.scroll_to_result = True
+                    st.rerun()
+
+        if st.button("\U0001f504 Reset Scanner", key="reset_search", use_container_width=True):
+            st.session_state.current_scan = None
+            st.session_state.scan_key += 1
+            st.rerun()
+    else:
+        st.info("No products in inventory yet. Go to the Admin tab to add some.")
 
 # ======================================================================
 # TAB 2 : CURRENT BILL & CHECKOUT
