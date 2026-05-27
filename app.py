@@ -439,12 +439,6 @@ navigator.permissions.query({name: "camera"}).then(function(result) {
 init_db()
 init_cart()
 
-if not _OCR_AVAILABLE:
-    st.info(
-        "\U0001f6a7 Auto-scan disabled (OCR engine not available on this server). "
-        "Use **search** below to add products."
-    )
-
 st.title("\U0001f50c ShopScan")
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────
