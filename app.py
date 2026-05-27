@@ -283,7 +283,7 @@ def multi_method_match(image_bytes):
 
     results = []
     for p in products:
-        raw = (p.get("image_path") or "").strip()
+        raw = (p["image_path"] or "").strip()
         if not raw:
             continue
         paths = [x.strip() for x in raw.split("|") if x.strip() and os.path.isfile(x.strip())]
