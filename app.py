@@ -840,8 +840,13 @@ with tab2:
             )
         with col_clr:
             if st.button("\U0001f5d1 Clear History", use_container_width=True):
-                clear_transaction_history()
-                st.rerun()
+                if st.session_state.get("confirm_clear_history"):
+                    clear_transaction_history()
+                    st.session_state.confirm_clear_history = False
+                    st.rerun()
+                else:
+                    st.session_state.confirm_clear_history = True
+                    st.warning("Are you sure? Click again to confirm")
 
 # ======================================================================
 # TAB 3 : INVENTORY ADMIN PANEL
