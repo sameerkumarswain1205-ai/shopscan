@@ -207,16 +207,16 @@ import pytesseract
 # Point pytesseract to the expected install path on Windows
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-try:
-    pytesseract.get_tesseract_version()
-except Exception:
-    st.warning(
-        "\u26a0\ufe0f Tesseract-OCR engine not found at "
-        r"C:\Program Files\Tesseract-OCR\tesseract.exe. "
-        "OCR-based product matching will be disabled.\n\n"
-        "If you have not installed Tesseract-OCR yet, please download it from "
-        "https://github.com/UB-Mannheim/tesseract/wiki\n"
-        "and ensure it is installed in C:\\Program Files\\Tesseract-OCR."
+if os.path.exists(r"C:\Program Files\Tesseract-OCR\tesseract.exe"):
+    try:
+        pytesseract.get_tesseract_version()
+    except Exception as e:
+        print(f"[Tesseract] Version check failed: {e}")
+else:
+    st.error(
+        "\u274c Tesseract-OCR engine is NOT installed.\n\n"
+        "Please install it from https://github.com/UB-Mannheim/tesseract/wiki\n"
+        "and ensure it is at: C:\\Program Files\\Tesseract-OCR"
     )
 
 
@@ -467,6 +467,12 @@ navigator.permissions.query({name: "camera"}).then(function(result) {
 init_db()
 init_cart()
 
+st.info(
+    "\U0001f6a7 **Quick Help:** If you see an error, please:\n\n"
+    "1) Install Tesseract-OCR to C:\\Program Files\\Tesseract-OCR (download: https://github.com/UB-Mannheim/tesseract/wiki)\n"
+    "2) Click the lock icon in your browser address bar to **Allow** camera access."
+)
+
 st.title("\U0001f50c ShopScan")
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────
@@ -570,7 +576,12 @@ with tab1:
 
     # -- Camera input (dynamic key lets us force-reset the widget) --
     camera_key = f"cam_{st.session_state.scan_key}"
-    cam_img = st.camera_input("Take a photo of the item", key=camera_key)
+    try:
+        cam_img = st.camera_input("Take a photo of the item", key=camera_key)
+    except Exception as e:
+        print(f"[Camera Error] st.camera_input() failed: {e}")
+        st.error(f"Camera initialization failed: {e}")
+        cam_img = None
     if cam_img is None:
         st.caption("⏳ Camera widget loaded — take a photo to proceed.")
     else:
@@ -880,7 +891,12 @@ with tab3:
         step = st.session_state.capture_step
         print(f"[Debug] Admin camera active, step={step}, scan_key={st.session_state.scan_key}")
         st.write(f"**Photos taken: {step} / 4**")
-        img = st.camera_input(" ", key=f"cap_cam_{step}", label_visibility="collapsed")
+        try:
+            img = st.camera_input(" ", key=f"cap_cam_{step}", label_visibility="collapsed")
+        except Exception as e:
+            print(f"[Camera Error] Admin st.camera_input() failed: {e}")
+            st.error(f"Camera initialization failed: {e}")
+            img = None
         if img is not None:
             print(f"[Debug] Admin photo captured ({len(img.getvalue())} bytes)")
             if len(st.session_state.captured_images) < 4:
