@@ -200,130 +200,53 @@ def clear_transaction_history():
 # ---------------------------------------------------------------------------
 
 import re
-import cv2
-import numpy as np
-import pytesseract
 
-# Point pytesseract to the expected install path on Windows
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-
-if os.path.exists(r"C:\Program Files\Tesseract-OCR\tesseract.exe"):
-    try:
-        pytesseract.get_tesseract_version()
-    except Exception as e:
-        print(f"[Tesseract] Version check failed: {e}")
-else:
-    st.error(
-        "\u274c Tesseract-OCR engine is NOT installed.\n\n"
-        "Please install it from https://github.com/UB-Mannheim/tesseract/wiki\n"
-        "and ensure it is at: C:\\Program Files\\Tesseract-OCR"
-    )
-
-
-def _img_to_array(image_bytes):
-    """Convert image bytes to RGB numpy array."""
-    nparr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    if img is None:
-        return None
-    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-
-def _crop_scan_box(rgb):
-    """Crop to the green dotted rectangle (15% inset, 70% wide, 55% tall)."""
-    h, w = rgb.shape[:2]
-    x1 = int(w * 0.15)
-    y1 = int(h * 0.15)
-    x2 = int(w * 0.85)
-    y2 = int(h * 0.70)
-    return rgb[y1:y2, x1:x2]
-
-
-def _load_ref(path):
-    """Load a product reference image as RGB array."""
-    img = cv2.imread(path)
-    if img is None:
-        return None
-    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-
-def _ocr_score(query_rgb, product_name, category=""):
-    """Score 0-100 based on OCR text match with product name or category."""
-    # Preprocess for better OCR
-    gray = cv2.cvtColor(query_rgb, cv2.COLOR_RGB2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
-    _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    try:
-        text = pytesseract.image_to_string(thresh, config="--psm 6").lower().strip()
-    except Exception:
-        text = ""
-    if not text:
-        return 0
-    text_words = set(re.sub(r"[^a-z0-9\s]", "", text).split())
-    if not text_words:
-        return 0
-
-    targets = [product_name.lower(), category.lower()]
-    for target in targets:
-        target_words = set(re.sub(r"[^a-z0-9\s]", "", target).split())
-        if not target_words:
-            continue
-        matches = target_words & text_words
-        if matches:
-            return min(len(matches) / max(len(target_words), 1) * 100, 100)
-    return 0
-
-
-def _color_score(query_rgb, ref_rgb):
-    """Score 0-100 based on HSV histogram correlation."""
-    q_hsv = cv2.cvtColor(query_rgb, cv2.COLOR_RGB2HSV)
-    r_hsv = cv2.cvtColor(ref_rgb, cv2.COLOR_RGB2HSV)
-    q_hist = cv2.calcHist([q_hsv], [0, 1], None, [8, 8], [0, 180, 0, 256])
-    r_hist = cv2.calcHist([r_hsv], [0, 1], None, [8, 8], [0, 180, 0, 256])
-    cv2.normalize(q_hist, q_hist)
-    cv2.normalize(r_hist, r_hist)
-    return max(0, cv2.compareHist(q_hist, r_hist, cv2.HISTCMP_CORREL) * 100)
-
-
-def _shape_score(query_rgb, ref_rgb):
-    """Score 0-100 based on aspect ratio and Hu-moment similarity."""
-    q_gray = cv2.cvtColor(query_rgb, cv2.COLOR_RGB2GRAY)
-    r_gray = cv2.cvtColor(ref_rgb, cv2.COLOR_RGB2GRAY)
-    q_edges = cv2.Canny(q_gray, 50, 150)
-    r_edges = cv2.Canny(r_gray, 50, 150)
-    q_conts, _ = cv2.findContours(q_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    r_conts, _ = cv2.findContours(r_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not q_conts or not r_conts:
-        return 0
-    q_cnt = max(q_conts, key=cv2.contourArea)
-    r_cnt = max(r_conts, key=cv2.contourArea)
-    if cv2.contourArea(q_cnt) < 100 or cv2.contourArea(r_cnt) < 100:
-        return 0
-    q_x, q_y, q_w, q_h = cv2.boundingRect(q_cnt)
-    r_x, r_y, r_w, r_h = cv2.boundingRect(r_cnt)
-    q_ar = q_w / max(q_h, 1)
-    r_ar = r_w / max(r_h, 1)
-    ar_score = 100 - min(abs(q_ar - r_ar) / max(max(q_ar, r_ar), 0.01) * 100, 100)
-    q_hu = cv2.HuMoments(cv2.moments(q_cnt)).flatten()
-    r_hu = cv2.HuMoments(cv2.moments(r_cnt)).flatten()
-    q_log = np.log(np.abs(q_hu) + 1e-10)
-    r_log = np.log(np.abs(r_hu) + 1e-10)
-    hu_dist = sum(abs(a - b) for a, b in zip(q_log, r_log))
-    hu_score = max(0, 100 - hu_dist * 10)
-    return ar_score * 0.4 + hu_score * 0.6
+# ── Optional ML/OCR dependencies ─────────────────────────────────────
+try:
+    import cv2
+    import numpy as np
+    import pytesseract
+    # Attempt to locate tesseract on common paths
+    for _p in [
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        "/usr/bin/tesseract",
+        "/usr/local/bin/tesseract",
+    ]:
+        if os.path.exists(_p):
+            pytesseract.pytesseract.tesseract_cmd = _p
+            break
+    pytesseract.get_tesseract_version()
+    _OCR_AVAILABLE = True
+except Exception:
+    _OCR_AVAILABLE = False
+    cv2 = None
+    numpy = None
+    pytesseract = None
+    print("[OCR] Tesseract not available — falling back to manual entry.")
 
 
 def multi_method_match(image_bytes):
     """
     Match product using OCR + Color + Shape ensemble.
-    Returns (product_row, status_message).
+    Falls back to returning None + message if CV2/OCR engines are unavailable.
     """
-    query_rgb = _img_to_array(image_bytes)
-    if query_rgb is None:
-        return None, "Could not read image."
+    if not _OCR_AVAILABLE:
+        return None, "Auto-match unavailable (no OCR engine). Use search below."
 
-    query_rgb = _crop_scan_box(query_rgb)
+    try:
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        query_rgb = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if query_rgb is None:
+            return None, "Could not read image."
+        query_rgb = cv2.cvtColor(query_rgb, cv2.COLOR_BGR2RGB)
+    except Exception:
+        return None, "Could not process image."
+
+    # Crop to scanning box
+    h, w = query_rgb.shape[:2]
+    x1, y1 = int(w * 0.15), int(h * 0.15)
+    x2, y2 = int(w * 0.85), int(h * 0.70)
+    query_rgb = query_rgb[y1:y2, x1:x2]
     h, w = query_rgb.shape[:2]
     if h < 20 or w < 20:
         return None, "No matching product found."
@@ -340,13 +263,73 @@ def multi_method_match(image_bytes):
         paths = [x.strip() for x in raw.split("|") if x.strip() and os.path.isfile(x.strip())]
         if not paths:
             continue
-        ref_rgb = _load_ref(paths[0])
-        if ref_rgb is None:
+        try:
+            ref_rgb = cv2.imread(paths[0])
+            if ref_rgb is None:
+                continue
+            ref_rgb = cv2.cvtColor(ref_rgb, cv2.COLOR_BGR2RGB)
+        except Exception:
             continue
-        ocr = _ocr_score(query_rgb, p["item_name"], p["category"]) * 0.35
-        color = _color_score(query_rgb, ref_rgb) * 0.35
-        shape = _shape_score(query_rgb, ref_rgb) * 0.30
-        combined = round(ocr + color + shape, 1)
+
+        # OCR score
+        ocr_score = 0
+        try:
+            gray = cv2.cvtColor(query_rgb, cv2.COLOR_RGB2GRAY)
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            enhanced = clahe.apply(gray)
+            _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            text = pytesseract.image_to_string(thresh, config="--psm 6").lower().strip()
+            if text:
+                text_words = set(re.sub(r"[^a-z0-9\s]", "", text).split())
+                targets = [p["item_name"].lower(), (p["category"] or "").lower()]
+                for target in targets:
+                    target_words = set(re.sub(r"[^a-z0-9\s]", "", target).split())
+                    if target_words:
+                        matches = target_words & text_words
+                        if matches:
+                            ocr_score = min(len(matches) / len(target_words) * 100, 100)
+                            break
+        except Exception:
+            pass
+
+        # Color score
+        color_score = 0
+        try:
+            q_hsv = cv2.cvtColor(query_rgb, cv2.COLOR_RGB2HSV)
+            r_hsv = cv2.cvtColor(ref_rgb, cv2.COLOR_RGB2HSV)
+            q_hist = cv2.calcHist([q_hsv], [0, 1], None, [8, 8], [0, 180, 0, 256])
+            r_hist = cv2.calcHist([r_hsv], [0, 1], None, [8, 8], [0, 180, 0, 256])
+            cv2.normalize(q_hist, q_hist)
+            cv2.normalize(r_hist, r_hist)
+            color_score = max(0, cv2.compareHist(q_hist, r_hist, cv2.HISTCMP_CORREL) * 100)
+        except Exception:
+            pass
+
+        # Shape score
+        shape_score = 0
+        try:
+            q_gray = cv2.cvtColor(query_rgb, cv2.COLOR_RGB2GRAY)
+            r_gray = cv2.cvtColor(ref_rgb, cv2.COLOR_RGB2GRAY)
+            q_edges = cv2.Canny(q_gray, 50, 150)
+            r_edges = cv2.Canny(r_gray, 50, 150)
+            q_conts, _ = cv2.findContours(q_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            r_conts, _ = cv2.findContours(r_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if q_conts and r_conts:
+                q_cnt = max(q_conts, key=cv2.contourArea)
+                r_cnt = max(r_conts, key=cv2.contourArea)
+                if cv2.contourArea(q_cnt) >= 100 and cv2.contourArea(r_cnt) >= 100:
+                    q_ar = cv2.boundingRect(q_cnt)[2] / max(cv2.boundingRect(q_cnt)[3], 1)
+                    r_ar = cv2.boundingRect(r_cnt)[2] / max(cv2.boundingRect(r_cnt)[3], 1)
+                    ar_score = 100 - min(abs(q_ar - r_ar) / max(max(q_ar, r_ar), 0.01) * 100, 100)
+                    q_hu = cv2.HuMoments(cv2.moments(q_cnt)).flatten()
+                    r_hu = cv2.HuMoments(cv2.moments(r_cnt)).flatten()
+                    hu_dist = sum(abs(a - b) for a, b in zip(np.log(np.abs(q_hu) + 1e-10), np.log(np.abs(r_hu) + 1e-10)))
+                    hu_score = max(0, 100 - hu_dist * 10)
+                    shape_score = ar_score * 0.4 + hu_score * 0.6
+        except Exception:
+            pass
+
+        combined = round(ocr_score * 0.35 + color_score * 0.35 + shape_score * 0.30, 1)
         results.append((combined, p))
 
     if not results:
@@ -354,10 +337,8 @@ def multi_method_match(image_bytes):
 
     results.sort(key=lambda x: x[0], reverse=True)
     best_score, best_row = results[0]
-
     if best_score >= 25:
         return best_row, None
-
     return None, "No matching product found."
 
 
@@ -469,11 +450,11 @@ navigator.permissions.query({name: "camera"}).then(function(result) {
 init_db()
 init_cart()
 
-st.info(
-    "\U0001f6a7 **Quick Help:** If you see an error, please:\n\n"
-    "1) Install Tesseract-OCR to C:\\Program Files\\Tesseract-OCR (download: https://github.com/UB-Mannheim/tesseract/wiki)\n"
-    "2) Click the lock icon in your browser address bar to **Allow** camera access."
-)
+if not _OCR_AVAILABLE:
+    st.info(
+        "\U0001f6a7 **Auto-match** requires Tesseract-OCR (optional). "
+        "You can still add items to the bill using the **search bar** below."
+    )
 
 st.title("\U0001f50c ShopScan")
 
@@ -572,22 +553,19 @@ with tab1:
         "\U0001f4a1 Tip: Center the item inside the dashed box for the best matching score."
     )
 
-    # -- Debug: log camera state to terminal --
-    print(f"[Debug] scan_key={st.session_state.scan_key} rendering Tab1 camera_input")
-    st.write("Checking camera status...")
-
     # -- Camera input (dynamic key lets us force-reset the widget) --
     camera_key = f"cam_{st.session_state.scan_key}"
     try:
         cam_img = st.camera_input("Take a photo of the item", key=camera_key)
     except Exception as e:
-        print(f"[Camera Error] st.camera_input() failed: {e}")
         st.error(f"Camera initialization failed: {e}")
         cam_img = None
-    if cam_img is None:
-        st.caption("⏳ Camera widget loaded — take a photo to proceed.")
-    else:
-        print(f"[Debug] Photo captured via camera ({len(cam_img.getvalue())} bytes)")
+
+    col_cam_refresh, _ = st.columns([1, 3])
+    with col_cam_refresh:
+        if st.button("\U0001f504 Refresh Camera", key="refresh_cam_scan"):
+            st.session_state.scan_key += 1
+            st.rerun()
 
     # -- File uploader fallback (also uses dynamic key so reset clears it) --
     upload_key = f"upload_{st.session_state.scan_key}"
@@ -892,16 +870,13 @@ with tab3:
     if camera_on:
         step = st.session_state.capture_step
         refresh = st.session_state.camera_refresh
-        print(f"[Debug] Admin camera active, step={step}, refresh={refresh}, scan_key={st.session_state.scan_key}")
         st.write(f"**Photos taken: {step} / 4**")
         try:
             img = st.camera_input(" ", key=f"cap_cam_{step}_r{refresh}", label_visibility="collapsed")
         except Exception as e:
-            print(f"[Camera Error] Admin st.camera_input() failed: {e}")
             st.error(f"Camera initialization failed: {e}")
             img = None
         if img is not None:
-            print(f"[Debug] Admin photo captured ({len(img.getvalue())} bytes)")
             if len(st.session_state.captured_images) < 4:
                 st.session_state.captured_images.append(img)
                 st.session_state.capture_step = len(st.session_state.captured_images)
@@ -917,7 +892,6 @@ with tab3:
                 st.rerun()
         with col_skip:
             if st.button("Skip", use_container_width=True):
-                print("[Debug] Admin camera skipped by user")
                 st.session_state.camera_active = False
                 st.session_state.capture_step = 0
                 st.rerun()
