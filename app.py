@@ -27,6 +27,8 @@ st.markdown("""<style>
 header { display: none !important; }
 #MainMenu { display: none !important; }
 footer { display: none !important; }
+div[data-testid="stTabs"] { margin-top: -1rem !important; }
+div[data-testid="stTabContent"] { padding-top: 0rem !important; margin-top: -2rem !important; }
 </style>""", unsafe_allow_html=True)
 
 import os
