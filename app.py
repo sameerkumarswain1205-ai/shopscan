@@ -360,6 +360,11 @@ def init_cart():
 
 
 
+def _update_qty(idx):
+    key = f"bill_qty_{idx}"
+    st.session_state["cart"][idx]["qty"] = st.session_state[key]
+
+
 def cart_add(product, qty):
     cart = st.session_state.cart
     for item in cart:
@@ -704,19 +709,14 @@ with tab2:
             </div>
         </div>
         """, unsafe_allow_html=True)
-            col1, col2, col3 = st.columns([2, 1, 1])
+            col1, col2 = st.columns([3, 1])
             with col1:
-                new_qty = st.number_input(
+                st.number_input(
                     "Qty", min_value=1, value=item["qty"],
                     key=f"bill_qty_{i}", label_visibility="visible",
+                    on_change=_update_qty, args=(i,),
                 )
             with col2:
-                st.write("")
-                st.write("")
-                if st.button("\U0001f4c5 Update", key=f"bill_upd_{i}", use_container_width=True):
-                    st.session_state["cart"][i]["qty"] = new_qty
-                    st.rerun()
-            with col3:
                 st.write("")
                 st.write("")
                 if st.button("\U0001f5d1", key=f"bill_del_{i}", use_container_width=True):
