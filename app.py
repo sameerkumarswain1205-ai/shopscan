@@ -185,6 +185,7 @@ def get_transaction_history():
         "SELECT bill_id, timestamp, items, total, status FROM history ORDER BY bill_id DESC"
     ).fetchall()
     conn.close()
+    print(f"[DEBUG] get_transaction_history() returned {len(rows)} rows")
     return rows
 
 
@@ -814,39 +815,39 @@ with tab2:
             hide_index=True,
         )
 
-        col_exp, col_clr = st.columns([1, 1])
-        with col_exp:
-            # Build CSV export
-            csv_lines = ["S.No,Bill ID,Date,Time,Item Name,Quantity,Total Amount,Status"]
-            sno = 1
-            for r in sorted(history_rows, key=lambda x: x["bill_id"]):
-                parts = r["items"].rsplit(" x", 1)
-                item_name = parts[0]
-                qty = parts[1] if len(parts) > 1 else ""
-                ts = r["timestamp"]
-                date_part = ts[:10] if len(ts) >= 10 else ts
-                time_part = ts[11:19] if len(ts) >= 19 else ""
-                csv_lines.append(
-                    f'{sno},{r["bill_id"]},{date_part},{time_part},"{item_name}",{qty},\u20b9{r["total"]:.2f},{r["status"]}'
-                )
-                sno += 1
-            csv_str = "\n".join(csv_lines)
-            st.download_button(
-                "\U0001f4e4 Export CSV",
-                data=csv_str,
-                file_name="sales_history.csv",
-                mime="text/csv",
-                use_container_width=True,
+    # ── Export / Clear buttons (always visible) ────────────────────────
+    col_exp, col_clr = st.columns([1, 1])
+    with col_exp:
+        csv_lines = ["S.No,Bill ID,Date,Time,Item Name,Quantity,Total Amount,Status"]
+        sno = 1
+        for r in sorted(history_rows, key=lambda x: x["bill_id"]):
+            parts = r["items"].rsplit(" x", 1)
+            item_name = parts[0]
+            qty = parts[1] if len(parts) > 1 else ""
+            ts = r["timestamp"]
+            date_part = ts[:10] if len(ts) >= 10 else ts
+            time_part = ts[11:19] if len(ts) >= 19 else ""
+            csv_lines.append(
+                f'{sno},{r["bill_id"]},{date_part},{time_part},"{item_name}",{qty},\u20b9{r["total"]:.2f},{r["status"]}'
             )
-        with col_clr:
-            if st.button("\U0001f5d1 Clear History", use_container_width=True):
-                if st.session_state.get("confirm_clear_history"):
-                    clear_transaction_history()
-                    st.session_state.confirm_clear_history = False
-                    st.rerun()
-                else:
-                    st.session_state.confirm_clear_history = True
-                    st.warning("Are you sure? Click again to confirm")
+            sno += 1
+        csv_str = "\n".join(csv_lines)
+        st.download_button(
+            "\U0001f4e4 Export CSV",
+            data=csv_str,
+            file_name="sales_history.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with col_clr:
+        if st.button("\U0001f5d1 Clear History", use_container_width=True):
+            if st.session_state.get("confirm_clear_history"):
+                clear_transaction_history()
+                st.session_state.confirm_clear_history = False
+                st.rerun()
+            else:
+                st.session_state.confirm_clear_history = True
+                st.warning("Are you sure? Click again to confirm")
 
 # ======================================================================
 # TAB 3 : INVENTORY ADMIN PANEL
