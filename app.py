@@ -187,46 +187,101 @@ def clear_transaction_history():
 
 
 # ---------------------------------------------------------------------------
-# CLIP-BASED LOCAL IMAGE MATCHING
+# MULTI-METHOD MATCHING: OCR + Color + Shape
 # ---------------------------------------------------------------------------
 
-import torch
-from transformers import CLIPProcessor, CLIPModel
+import re
+import cv2
+import numpy as np
+import pytesseract
 
 
-@st.cache_resource
-def load_clip():
-    model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-    processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-    return model, processor
+def _img_to_array(image_bytes):
+    """Convert image bytes to RGB numpy array."""
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img is None:
+        return None
+    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def _image_embedding(_image):
-    """Compute normalized CLIP embedding for a PIL Image."""
-    model, processor = load_clip()
-    inputs = processor(images=_image, return_tensors="pt")
-    with torch.no_grad():
-        emb = model.get_image_features(**inputs)
-    emb = emb / emb.norm(p=2, dim=-1, keepdim=True)
-    return emb.cpu().numpy().flatten().tolist()
+def _load_ref(path):
+    """Load a product reference image as RGB array."""
+    img = cv2.imread(path)
+    if img is None:
+        return None
+    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
-def clip_match_image(image_bytes):
+def _ocr_score(query_rgb, product_name):
+    """Score 0-100 based on OCR text match with product name."""
+    gray = cv2.cvtColor(query_rgb, cv2.COLOR_RGB2GRAY)
+    text = pytesseract.image_to_string(gray, config="--psm 6").lower().strip()
+    if not text:
+        return 0
+    name_lower = product_name.lower()
+    name_words = set(re.sub(r"[^a-z0-9\s]", "", name_lower).split())
+    text_words = set(re.sub(r"[^a-z0-9\s]", "", text).split())
+    if not name_words or not text_words:
+        return 0
+    matches = name_words & text_words
+    return min(len(matches) / max(len(name_words), 1) * 100, 100)
+
+
+def _color_score(query_rgb, ref_rgb):
+    """Score 0-100 based on HSV histogram correlation."""
+    q_hsv = cv2.cvtColor(query_rgb, cv2.COLOR_RGB2HSV)
+    r_hsv = cv2.cvtColor(ref_rgb, cv2.COLOR_RGB2HSV)
+    q_hist = cv2.calcHist([q_hsv], [0, 1], None, [8, 8], [0, 180, 0, 256])
+    r_hist = cv2.calcHist([r_hsv], [0, 1], None, [8, 8], [0, 180, 0, 256])
+    cv2.normalize(q_hist, q_hist)
+    cv2.normalize(r_hist, r_hist)
+    return max(0, cv2.compareHist(q_hist, r_hist, cv2.HISTCMP_CORREL) * 100)
+
+
+def _shape_score(query_rgb, ref_rgb):
+    """Score 0-100 based on aspect ratio and Hu-moment similarity."""
+    q_gray = cv2.cvtColor(query_rgb, cv2.COLOR_RGB2GRAY)
+    r_gray = cv2.cvtColor(ref_rgb, cv2.COLOR_RGB2GRAY)
+    q_edges = cv2.Canny(q_gray, 50, 150)
+    r_edges = cv2.Canny(r_gray, 50, 150)
+    q_conts, _ = cv2.findContours(q_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    r_conts, _ = cv2.findContours(r_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not q_conts or not r_conts:
+        return 0
+    q_cnt = max(q_conts, key=cv2.contourArea)
+    r_cnt = max(r_conts, key=cv2.contourArea)
+    if cv2.contourArea(q_cnt) < 100 or cv2.contourArea(r_cnt) < 100:
+        return 0
+    q_x, q_y, q_w, q_h = cv2.boundingRect(q_cnt)
+    r_x, r_y, r_w, r_h = cv2.boundingRect(r_cnt)
+    q_ar = q_w / max(q_h, 1)
+    r_ar = r_w / max(r_h, 1)
+    ar_score = 100 - min(abs(q_ar - r_ar) / max(max(q_ar, r_ar), 0.01) * 100, 100)
+    q_hu = cv2.HuMoments(cv2.moments(q_cnt)).flatten()
+    r_hu = cv2.HuMoments(cv2.moments(r_cnt)).flatten()
+    q_log = np.log(np.abs(q_hu) + 1e-10)
+    r_log = np.log(np.abs(r_hu) + 1e-10)
+    hu_dist = sum(abs(a - b) for a, b in zip(q_log, r_log))
+    hu_score = max(0, 100 - hu_dist * 10)
+    return ar_score * 0.4 + hu_score * 0.6
+
+
+def multi_method_match(image_bytes):
     """
-    CLIP similarity search against product reference images.
-    Returns (product_row, status_message).
+    Match product using OCR + Color + Shape ensemble.
+    Returns (best_row, status_msg, alternatives)
+    where alternatives is a list of (score, row) for runners-up.
     """
+    query_rgb = _img_to_array(image_bytes)
+    if query_rgb is None:
+        return None, "Could not read image.", []
+
     products = get_all_products()
     if not products:
-        return None, "No products in database"
+        return None, "No products in database.", []
 
-    query_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    query_emb = _image_embedding(query_img)
-
-    best_score = 0.0
-    best_product = None
-
+    results = []
     for p in products:
         raw = (p.get("image_path") or "").strip()
         if not raw:
@@ -234,22 +289,25 @@ def clip_match_image(image_bytes):
         paths = [x.strip() for x in raw.split("|") if x.strip() and os.path.isfile(x.strip())]
         if not paths:
             continue
+        ref_rgb = _load_ref(paths[0])
+        if ref_rgb is None:
+            continue
+        ocr = _ocr_score(query_rgb, p["item_name"]) * 0.35
+        color = _color_score(query_rgb, ref_rgb) * 0.35
+        shape = _shape_score(query_rgb, ref_rgb) * 0.30
+        combined = round(ocr + color + shape, 1)
+        results.append((combined, p))
 
-        ref_img = Image.open(paths[0]).convert("RGB")
-        ref_emb = _image_embedding(ref_img)
+    if not results:
+        return None, "No reference images found for any product.", []
 
-        dot = sum(a * b for a, b in zip(query_emb, ref_emb))
-        if dot > best_score:
-            best_score = dot
-            best_product = p
+    results.sort(key=lambda x: x[0], reverse=True)
+    best_score, best_row = results[0]
 
-    if best_product and best_score >= 0.8:
-        return best_product, None
+    if best_score >= 40:
+        return best_row, None, results[1:3]
 
-    if best_product:
-        return None, f"Best match: {best_product['item_name']} ({best_score:.2f}). No confident match."
-
-    return None, "No confident match found. Please search manually or retake photo."
+    return None, f"Best: {best_row['item_name']} ({best_score:.0f}%) \u2014 below confidence threshold.", results[:3]
 
 
 # ---------------------------------------------------------------------------
@@ -466,18 +524,34 @@ with tab1:
         st.session_state.pending_image = source_bytes
 
     if st.session_state.get("pending_image"):
-        st.caption("\U0001f9e0 Running AI Locally \u2014 No Internet Required")
+        st.caption("\U0001f9e0 Analyzing: OCR Text + Color + Shape \u2014 No Internet Required")
         if st.button("\U0001f680 Analyze Product", key="analyze_btn", use_container_width=True, type="primary"):
-            with st.spinner("Identifying item..."):
-                row, status_msg = clip_match_image(st.session_state.pending_image)
+            with st.spinner("Analyzing product..."):
+                row, status_msg, alternatives = multi_method_match(st.session_state.pending_image)
 
             if row is not None:
                 st.session_state.current_scan = row
                 st.session_state.manual_select = row["item_name"]
-                st.success(f"\U0001f4e6 Product Detected: **{row['item_name']}**")
+                st.success(f"\U0001f4e6 **{row['item_name']}** detected")
                 st.session_state.scroll_to_result = True
+                if alternatives:
+                    st.markdown("**Also possible:**")
+                    for score, prod in alternatives:
+                        if st.button(f"{prod['item_name']} \u2014 {score:.0f}%",
+                                     key=f"alt_{prod['id']}", use_container_width=True):
+                            st.session_state.current_scan = prod
+                            st.session_state.scroll_to_result = True
+                            st.rerun()
             else:
                 st.warning(f"\u26a0\ufe0f {status_msg}")
+                if alternatives:
+                    st.markdown("**Closest matches:**")
+                    for score, prod in alternatives:
+                        if st.button(f"{prod['item_name']} \u2014 {score:.0f}%",
+                                     key=f"alt_fallback_{prod['id']}", use_container_width=True):
+                            st.session_state.current_scan = prod
+                            st.session_state.scroll_to_result = True
+                            st.rerun()
     else:
         st.info("Take a photo above, then click \u2018Analyze Product\u2019.")
 
