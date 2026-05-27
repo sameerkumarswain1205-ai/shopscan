@@ -355,8 +355,8 @@ def init_cart():
         st.session_state.selected_category = "Electrical"
     if "confirm_delete_all" not in st.session_state:
         st.session_state.confirm_delete_all = False
-    if "scan_active" not in st.session_state:
-        st.session_state.scan_active = False
+    if "show_camera" not in st.session_state:
+        st.session_state.show_camera = False
 
 
 
@@ -508,12 +508,12 @@ tab1, tab2, tab3 = st.tabs(["\U0001f4f7 Scan & Sell", "\U0001f4b0 Current Bill",
 with tab1:
     st.subheader("\U0001f4f7 Scan an item")
 
-    # -- Lazy camera init: Start Camera button prevents instant camera load --
-    if not st.session_state.scan_active:
+    # -- Start Camera button (lazy init, prevents instant camera load) --
+    if not st.session_state.get("show_camera", False):
         cam_img = None
         uploaded_file = None
         if st.button("\U0001f4f7 Start Camera", use_container_width=True):
-            st.session_state.scan_active = True
+            st.session_state.show_camera = True
             st.rerun()
     else:
         # ── Visual framing overlay for the camera viewfinder ──────────────
@@ -642,7 +642,7 @@ setTimeout(() => document.getElementById('result')?.scrollIntoView({behavior: 's
                             st.session_state.current_scan = None
                             st.session_state.scan_key += 1
                             st.session_state.search_key_counter += 1
-                            st.session_state.scan_active = False
+                            st.session_state.show_camera = False
                             st.rerun()
             else:
                 st.error("OUT OF STOCK")
@@ -651,7 +651,7 @@ setTimeout(() => document.getElementById('result')?.scrollIntoView({behavior: 's
         if st.button("\U0001f504 Reset Scanner", key="reset_scan", use_container_width=True):
             st.session_state.current_scan = None
             st.session_state.scan_key += 1
-            st.session_state.scan_active = False
+            st.session_state.show_camera = False
             st.rerun()
 
         st.markdown("---")
@@ -683,7 +683,7 @@ setTimeout(() => document.getElementById('result')?.scrollIntoView({behavior: 's
         if st.button("\U0001f504 Reset Scanner", key="reset_search", use_container_width=True):
             st.session_state.current_scan = None
             st.session_state.scan_key += 1
-            st.session_state.scan_active = False
+            st.session_state.show_camera = False
             st.rerun()
     else:
         st.info("No products in inventory yet. Go to the Admin tab to add some.")
