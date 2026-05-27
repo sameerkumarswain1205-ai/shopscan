@@ -566,6 +566,7 @@ with tab1:
 
     # -- Debug: log camera state to terminal --
     print(f"[Debug] scan_key={st.session_state.scan_key} rendering Tab1 camera_input")
+    st.write("Checking camera status...")
 
     # -- Camera input (dynamic key lets us force-reset the widget) --
     camera_key = f"cam_{st.session_state.scan_key}"
