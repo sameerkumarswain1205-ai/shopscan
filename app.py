@@ -23,8 +23,10 @@ st.markdown(
 )
 
 st.markdown("""<style>
-.block-container { padding-top: 1rem !important; }
+.block-container { padding-top: 0rem !important; margin-top: -3rem !important; }
 header { display: none !important; }
+#MainMenu { display: none !important; }
+footer { display: none !important; }
 </style>""", unsafe_allow_html=True)
 
 import os
