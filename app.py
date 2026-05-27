@@ -207,10 +207,9 @@ try:
     import cv2
     import numpy as np
     import pytesseract
-    pytesseract.get_tesseract_version()
     _OCR_AVAILABLE = True
 except Exception:
-    print("[OCR] Not available — using manual entry only.")
+    pass
 
 
 def multi_method_match(image_bytes):
@@ -440,8 +439,8 @@ init_cart()
 
 if not _OCR_AVAILABLE:
     st.info(
-        "\U0001f6a7 Auto product matching requires Tesseract-OCR (optional). "
-        "You can still add items using the **search bar** below."
+        "\U0001f6a7 Auto-scan disabled (OCR engine not available on this server). "
+        "Use **Upload from gallery** or **search** below to add products."
     )
 
 st.title("\U0001f50c ShopScan")
