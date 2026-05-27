@@ -208,8 +208,7 @@ def _image_embedding(_image):
     inputs = processor(images=_image, return_tensors="pt")
     with torch.no_grad():
         emb = model.get_image_features(**inputs)
-    print(f"Tensor type: {type(emb)}")
-    emb = emb / torch.norm(emb, p=2, dim=-1, keepdim=True)
+    emb = emb / emb.norm(p=2, dim=-1, keepdim=True)
     return emb.cpu().numpy().flatten().tolist()
 
 
