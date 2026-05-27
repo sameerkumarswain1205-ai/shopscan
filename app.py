@@ -205,6 +205,16 @@ def _img_to_array(image_bytes):
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
+def _crop_scan_box(rgb):
+    """Crop to the green dotted rectangle (15% inset, 70% wide, 55% tall)."""
+    h, w = rgb.shape[:2]
+    x1 = int(w * 0.15)
+    y1 = int(h * 0.15)
+    x2 = int(w * 0.85)
+    y2 = int(h * 0.70)
+    return rgb[y1:y2, x1:x2]
+
+
 def _load_ref(path):
     """Load a product reference image as RGB array."""
     img = cv2.imread(path)
@@ -213,19 +223,29 @@ def _load_ref(path):
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
-def _ocr_score(query_rgb, product_name):
-    """Score 0-100 based on OCR text match with product name."""
+def _ocr_score(query_rgb, product_name, category=""):
+    """Score 0-100 based on OCR text match with product name or category."""
+    # Preprocess for better OCR
     gray = cv2.cvtColor(query_rgb, cv2.COLOR_RGB2GRAY)
-    text = pytesseract.image_to_string(gray, config="--psm 6").lower().strip()
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+    _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    text = pytesseract.image_to_string(thresh, config="--psm 6").lower().strip()
     if not text:
         return 0
-    name_lower = product_name.lower()
-    name_words = set(re.sub(r"[^a-z0-9\s]", "", name_lower).split())
     text_words = set(re.sub(r"[^a-z0-9\s]", "", text).split())
-    if not name_words or not text_words:
+    if not text_words:
         return 0
-    matches = name_words & text_words
-    return min(len(matches) / max(len(name_words), 1) * 100, 100)
+
+    targets = [product_name.lower(), category.lower()]
+    for target in targets:
+        target_words = set(re.sub(r"[^a-z0-9\s]", "", target).split())
+        if not target_words:
+            continue
+        matches = target_words & text_words
+        if matches:
+            return min(len(matches) / max(len(target_words), 1) * 100, 100)
+    return 0
 
 
 def _color_score(query_rgb, ref_rgb):
@@ -276,6 +296,11 @@ def multi_method_match(image_bytes):
     if query_rgb is None:
         return None, "Could not read image."
 
+    query_rgb = _crop_scan_box(query_rgb)
+    h, w = query_rgb.shape[:2]
+    if h < 20 or w < 20:
+        return None, "No matching product found."
+
     products = get_all_products()
     if not products:
         return None, "No products in database."
@@ -291,7 +316,7 @@ def multi_method_match(image_bytes):
         ref_rgb = _load_ref(paths[0])
         if ref_rgb is None:
             continue
-        ocr = _ocr_score(query_rgb, p["item_name"]) * 0.35
+        ocr = _ocr_score(query_rgb, p["item_name"], p["category"]) * 0.35
         color = _color_score(query_rgb, ref_rgb) * 0.35
         shape = _shape_score(query_rgb, ref_rgb) * 0.30
         combined = round(ocr + color + shape, 1)
@@ -303,7 +328,7 @@ def multi_method_match(image_bytes):
     results.sort(key=lambda x: x[0], reverse=True)
     best_score, best_row = results[0]
 
-    if best_score >= 40:
+    if best_score >= 25:
         return best_row, None
 
     return None, "No matching product found."
