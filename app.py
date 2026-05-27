@@ -522,15 +522,6 @@ with tab1:
 
     # -- Camera input (dynamic key lets us force-reset the widget) --
     camera_key = f"cam_{st.session_state.scan_key}"
-    st.markdown("""
-<style>
-.mobile-camera-hint { display: none; }
-@media (max-width: 768px) { .mobile-camera-hint { display: block; } }
-</style>
-<div class="mobile-camera-hint" style="padding:0.5rem;border-radius:8px;background:#e6f7ff;border:1px solid #91d5ff;font-size:14px;margin-bottom:8px;">
-📱 On mobile: tap the 🔄 flip icon in the camera to switch to back camera
-</div>
-""", unsafe_allow_html=True)
     cam_img = st.camera_input("Take a photo of the item", key=camera_key)
 
     # -- File uploader fallback (also uses dynamic key so reset clears it) --
