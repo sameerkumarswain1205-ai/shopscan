@@ -202,27 +202,15 @@ def clear_transaction_history():
 import re
 
 # ── Optional ML/OCR dependencies ─────────────────────────────────────
+_OCR_AVAILABLE = False
 try:
     import cv2
     import numpy as np
     import pytesseract
-    # Attempt to locate tesseract on common paths
-    for _p in [
-        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-        "/usr/bin/tesseract",
-        "/usr/local/bin/tesseract",
-    ]:
-        if os.path.exists(_p):
-            pytesseract.pytesseract.tesseract_cmd = _p
-            break
     pytesseract.get_tesseract_version()
     _OCR_AVAILABLE = True
 except Exception:
-    _OCR_AVAILABLE = False
-    cv2 = None
-    numpy = None
-    pytesseract = None
-    print("[OCR] Tesseract not available — falling back to manual entry.")
+    print("[OCR] Not available — using manual entry only.")
 
 
 def multi_method_match(image_bytes):
@@ -452,18 +440,14 @@ init_cart()
 
 if not _OCR_AVAILABLE:
     st.info(
-        "\U0001f6a7 **Auto-match** requires Tesseract-OCR (optional). "
-        "You can still add items to the bill using the **search bar** below."
+        "\U0001f6a7 Auto product matching requires Tesseract-OCR (optional). "
+        "You can still add items using the **search bar** below."
     )
 
 st.title("\U0001f50c ShopScan")
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────
 with st.sidebar:
-    if st.button("\U0001f514 Test UI Event Loop", use_container_width=True):
-        print("Button Clicked")  # visible in the terminal running streamlit
-        st.success("UI event loop is working!")
-
     st.subheader("\U0001f4e5 Backup & Export")
     if st.button("\U0001f4e5 Export Database to CSV", use_container_width=True):
         df = pd.read_sql_query(
@@ -557,15 +541,15 @@ with tab1:
     camera_key = f"cam_{st.session_state.scan_key}"
     try:
         cam_img = st.camera_input("Take a photo of the item", key=camera_key)
-    except Exception as e:
-        st.error(f"Camera initialization failed: {e}")
+    except Exception:
+        st.warning(
+            "\u26a0\ufe0f Camera permission denied. Please click the lock icon "
+            "in your browser address bar to allow access, then click **Refresh Camera**."
+        )
         cam_img = None
 
-    col_cam_refresh, _ = st.columns([1, 3])
-    with col_cam_refresh:
-        if st.button("\U0001f504 Refresh Camera", key="refresh_cam_scan"):
-            st.session_state.scan_key += 1
-            st.rerun()
+    if st.button("Refresh Camera"):
+        st.rerun()
 
     # -- File uploader fallback (also uses dynamic key so reset clears it) --
     upload_key = f"upload_{st.session_state.scan_key}"
