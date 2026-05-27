@@ -1015,6 +1015,9 @@ with tab3:
     # ── View Stock ────────────────────────────────────────────────────
     st.subheader("\U0001f4ca Current Stock")
 
+    if st.button("\U0001f504 Refresh Inventory", use_container_width=True):
+        st.rerun()
+
     # ── Bulk Price Update ─────────────────────────────────────────────
     with st.expander("\U0001f4b5 Bulk Price Update", expanded=False):
         col_type, col_val, col_btn = st.columns([2, 2, 1])
