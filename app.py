@@ -37,6 +37,7 @@ import base64
 import sqlite3
 import tempfile
 from datetime import datetime
+import streamlit.components.v1 as components
 
 import pandas as pd
 from PIL import Image
@@ -406,18 +407,22 @@ st.set_page_config(
 st.markdown(
     """
 <script>
-// Override getUserMedia to force back camera
+// Override getUserMedia to force back camera by default
 const _getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
 navigator.mediaDevices.getUserMedia = function(constraints) {
     if (constraints && constraints.video !== false) {
+        const origVideo = constraints.video || {};
         constraints = {
             ...constraints,
             video: {
-                facingMode: { ideal: "environment" },
                 width: { ideal: 1280 },
-                height: { ideal: 720 }
+                height: { ideal: 720 },
+                ...(typeof origVideo === 'object' ? origVideo : {})
             }
         };
+        if (!constraints.video.facingMode) {
+            constraints.video.facingMode = { ideal: "environment" };
+        }
     }
     return _getUserMedia(constraints);
 };
@@ -829,15 +834,47 @@ with tab3:
     if camera_on:
         step = st.session_state.capture_step
         st.write(f"**Photos taken: {step} / 4**")
-        img = st.camera_input(" ", key=f"cap_cam_{step}", label_visibility="collapsed")
-        if img:
+        img_data = components.html(
+            """
+<video id="video" autoplay playsinline style="width:100%;border-radius:8px;border:1px solid #ddd;"></video>
+<canvas id="canvas" style="display:none"></canvas>
+<div style="display:flex;gap:8px;margin-top:8px;">
+  <button onclick="capture()" style="flex:1;padding:12px;background:#4CAF50;color:white;border:none;border-radius:8px;font-size:16px;">📸 Capture Photo</button>
+</div>
+<script>
+var stream = null;
+navigator.mediaDevices.getUserMedia({video: {facingMode: {exact: "environment"}}, audio: false})
+  .then(function(s) { stream = s; document.getElementById('video').srcObject = stream; })
+  .catch(function() {
+    navigator.mediaDevices.getUserMedia({video: true, audio: false})
+      .then(function(s) { stream = s; document.getElementById('video').srcObject = stream; });
+  });
+function capture() {
+  var video = document.getElementById('video');
+  var canvas = document.getElementById('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  var ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+  var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  if (stream) { stream.getTracks().forEach(function(t) { t.stop(); }); }
+  Streamlit.setComponentValue(dataUrl);
+}
+</script>
+""",
+            height=380,
+        )
+        if img_data:
+            header, encoded = img_data.split(",", 1)
+            binary = base64.b64decode(encoded)
+            img_io = io.BytesIO(binary)
             if len(st.session_state.captured_images) < 4:
-                st.session_state.captured_images.append(img)
+                st.session_state.captured_images.append(img_io)
                 st.session_state.capture_step = len(st.session_state.captured_images)
                 if len(st.session_state.captured_images) >= 4:
                     st.session_state.camera_active = False
             st.rerun()
-        if st.button("Skip", use_container_width=True):
+        if st.button("Skip", key="skip_cam", use_container_width=True):
             st.session_state.camera_active = False
             st.session_state.capture_step = 0
             st.rerun()
