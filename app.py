@@ -270,16 +270,15 @@ def _shape_score(query_rgb, ref_rgb):
 def multi_method_match(image_bytes):
     """
     Match product using OCR + Color + Shape ensemble.
-    Returns (best_row, status_msg, alternatives)
-    where alternatives is a list of (score, row) for runners-up.
+    Returns (product_row, status_message).
     """
     query_rgb = _img_to_array(image_bytes)
     if query_rgb is None:
-        return None, "Could not read image.", []
+        return None, "Could not read image."
 
     products = get_all_products()
     if not products:
-        return None, "No products in database.", []
+        return None, "No products in database."
 
     results = []
     for p in products:
@@ -299,15 +298,15 @@ def multi_method_match(image_bytes):
         results.append((combined, p))
 
     if not results:
-        return None, "No reference images found for any product.", []
+        return None, "No matching product found."
 
     results.sort(key=lambda x: x[0], reverse=True)
     best_score, best_row = results[0]
 
     if best_score >= 40:
-        return best_row, None, results[1:3]
+        return best_row, None
 
-    return None, f"Best: {best_row['item_name']} ({best_score:.0f}%) \u2014 below confidence threshold.", results[:3]
+    return None, "No matching product found."
 
 
 # ---------------------------------------------------------------------------
@@ -334,8 +333,6 @@ def init_cart():
         st.session_state.selected_category = "Electrical"
     if "confirm_delete_all" not in st.session_state:
         st.session_state.confirm_delete_all = False
-    if "pending_image" not in st.session_state:
-        st.session_state.pending_image = None
 
 
 
@@ -519,41 +516,18 @@ with tab1:
     elif uploaded_file is not None:
         source_bytes = uploaded_file.getvalue()
 
-    # Store latest image for manual analysis (no auto-call)
+    # Auto-analyze when a photo is taken or uploaded
     if source_bytes is not None:
-        st.session_state.pending_image = source_bytes
+        with st.spinner("Analyzing..."):
+            row, status_msg = multi_method_match(source_bytes)
 
-    if st.session_state.get("pending_image"):
-        st.caption("\U0001f9e0 Analyzing: OCR Text + Color + Shape \u2014 No Internet Required")
-        if st.button("\U0001f680 Analyze Product", key="analyze_btn", use_container_width=True, type="primary"):
-            with st.spinner("Analyzing product..."):
-                row, status_msg, alternatives = multi_method_match(st.session_state.pending_image)
-
-            if row is not None:
-                st.session_state.current_scan = row
-                st.session_state.manual_select = row["item_name"]
-                st.success(f"\U0001f4e6 **{row['item_name']}** detected")
-                st.session_state.scroll_to_result = True
-                if alternatives:
-                    st.markdown("**Also possible:**")
-                    for score, prod in alternatives:
-                        if st.button(f"{prod['item_name']} \u2014 {score:.0f}%",
-                                     key=f"alt_{prod['id']}", use_container_width=True):
-                            st.session_state.current_scan = prod
-                            st.session_state.scroll_to_result = True
-                            st.rerun()
-            else:
-                st.warning(f"\u26a0\ufe0f {status_msg}")
-                if alternatives:
-                    st.markdown("**Closest matches:**")
-                    for score, prod in alternatives:
-                        if st.button(f"{prod['item_name']} \u2014 {score:.0f}%",
-                                     key=f"alt_fallback_{prod['id']}", use_container_width=True):
-                            st.session_state.current_scan = prod
-                            st.session_state.scroll_to_result = True
-                            st.rerun()
-    else:
-        st.info("Take a photo above, then click \u2018Analyze Product\u2019.")
+        if row is not None:
+            st.session_state.current_scan = row
+            st.session_state.manual_select = row["item_name"]
+            st.success(f"\u2705 Product Matched: **{row['item_name']}**")
+            st.session_state.scroll_to_result = True
+        else:
+            st.error(f"\u274c No matching product found")
 
     # -- Manual fallback dropdown (always available) --
     st.markdown("---")
