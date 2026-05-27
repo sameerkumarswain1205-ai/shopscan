@@ -22,6 +22,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+st.markdown("""<style>
+.block-container { padding-top: 1rem !important; }
+header { display: none !important; }
+</style>""", unsafe_allow_html=True)
+
 import os
 import io
 import base64
