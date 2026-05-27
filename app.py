@@ -204,15 +204,19 @@ import cv2
 import numpy as np
 import pytesseract
 
-# Warn if Tesseract-OCR engine is not installed on the system
+# Point pytesseract to the expected install path on Windows
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
 try:
     pytesseract.get_tesseract_version()
 except Exception:
     st.warning(
-        "⚠️ Tesseract-OCR is not installed or not in PATH. "
-        "OCR-based product matching will be disabled. "
-        "Install from: https://github.com/UB-Mannheim/tesseract/wiki "
-        "and add it to your system PATH."
+        "\u26a0\ufe0f Tesseract-OCR engine not found at "
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe. "
+        "OCR-based product matching will be disabled.\n\n"
+        "If you have not installed Tesseract-OCR yet, please download it from "
+        "https://github.com/UB-Mannheim/tesseract/wiki\n"
+        "and ensure it is installed in C:\\Program Files\\Tesseract-OCR."
     )
 
 
