@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Streamlit / ML artifacts (not part of Flutter app)
+/product_images/
+/yolov8n.pt
+/shop.db
