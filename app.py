@@ -445,6 +445,20 @@ window.onerror = function(msg, url, line) {
     console.error("[App Error]", msg, "at", url, "line", line);
 };
 console.log("[App] Streamlit app loaded. Camera access requires HTTPS or localhost.");
+
+// Check camera permission on page load
+navigator.permissions.query({name: "camera"}).then(function(result) {
+    console.log("[Camera] Permission state:", result.state);
+    if (result.state === "denied") {
+        console.error("[Camera] PERMISSION DENIED — user has blocked camera access.");
+    } else if (result.state === "prompt") {
+        console.log("[Camera] Permission will be requested when camera is used.");
+    } else if (result.state === "granted") {
+        console.log("[Camera] Permission already granted.");
+    }
+}).catch(function(err) {
+    console.warn("[Camera] Could not query permission API:", err);
+});
 </script>
 """,
     unsafe_allow_html=True,
@@ -550,9 +564,16 @@ with tab1:
         "\U0001f4a1 Tip: Center the item inside the dashed box for the best matching score."
     )
 
+    # -- Debug: log camera state to terminal --
+    print(f"[Debug] scan_key={st.session_state.scan_key} rendering Tab1 camera_input")
+
     # -- Camera input (dynamic key lets us force-reset the widget) --
     camera_key = f"cam_{st.session_state.scan_key}"
     cam_img = st.camera_input("Take a photo of the item", key=camera_key)
+    if cam_img is None:
+        st.caption("⏳ Camera widget loaded — take a photo to proceed.")
+    else:
+        print(f"[Debug] Photo captured via camera ({len(cam_img.getvalue())} bytes)")
 
     # -- File uploader fallback (also uses dynamic key so reset clears it) --
     upload_key = f"upload_{st.session_state.scan_key}"
@@ -856,16 +877,21 @@ with tab3:
 
     if camera_on:
         step = st.session_state.capture_step
+        print(f"[Debug] Admin camera active, step={step}, scan_key={st.session_state.scan_key}")
         st.write(f"**Photos taken: {step} / 4**")
         img = st.camera_input(" ", key=f"cap_cam_{step}", label_visibility="collapsed")
-        if img:
+        if img is not None:
+            print(f"[Debug] Admin photo captured ({len(img.getvalue())} bytes)")
             if len(st.session_state.captured_images) < 4:
                 st.session_state.captured_images.append(img)
                 st.session_state.capture_step = len(st.session_state.captured_images)
                 if len(st.session_state.captured_images) >= 4:
                     st.session_state.camera_active = False
             st.rerun()
+        else:
+            st.caption("⏳ Camera active — take a photo to capture.")
         if st.button("Skip", use_container_width=True):
+            print("[Debug] Admin camera skipped by user")
             st.session_state.camera_active = False
             st.session_state.capture_step = 0
             st.rerun()
