@@ -204,6 +204,17 @@ import cv2
 import numpy as np
 import pytesseract
 
+# Warn if Tesseract-OCR engine is not installed on the system
+try:
+    pytesseract.get_tesseract_version()
+except Exception:
+    st.warning(
+        "⚠️ Tesseract-OCR is not installed or not in PATH. "
+        "OCR-based product matching will be disabled. "
+        "Install from: https://github.com/UB-Mannheim/tesseract/wiki "
+        "and add it to your system PATH."
+    )
+
 
 def _img_to_array(image_bytes):
     """Convert image bytes to RGB numpy array."""
@@ -239,7 +250,10 @@ def _ocr_score(query_rgb, product_name, category=""):
     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
     _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    text = pytesseract.image_to_string(thresh, config="--psm 6").lower().strip()
+    try:
+        text = pytesseract.image_to_string(thresh, config="--psm 6").lower().strip()
+    except Exception:
+        text = ""
     if not text:
         return 0
     text_words = set(re.sub(r"[^a-z0-9\s]", "", text).split())
